@@ -1,6 +1,6 @@
 
 === A. Attribute karpconfig mode: 13 tiers + default, keyed on karpenter.k8s.aws/instance-cpu (well-known label)
-NodePool general      labels=map[karpenter.sh/nodepool:general]
+NodePool general              labels=map[karpenter.sh/nodepool:general]
   karpenter <=1.13 plans every new node with : 14 DS  cpu=7240m  mem=15520Mi  cpu12,cpu128,cpu16,cpu192,cpu2,cpu24,cpu32,cpu4,cpu48,cpu64,cpu72,cpu8,cpu96,default
   karpenter >=1.14 c6i.large     plans with        :  1 DS  cpu=100m   mem=300Mi    cpu2
                    c6i.large     actually gets     :  1 DS  cpu=100m   mem=300Mi    cpu2  -> matches reality
@@ -10,13 +10,13 @@ NodePool general      labels=map[karpenter.sh/nodepool:general]
                    c6i.8xlarge   actually gets     :  1 DS  cpu=320m   mem=640Mi    cpu32  -> matches reality
   karpenter >=1.14 c6i.16xlarge  plans with        :  1 DS  cpu=640m   mem=1280Mi   cpu64
                    c6i.16xlarge  actually gets     :  1 DS  cpu=640m   mem=1280Mi   cpu64  -> matches reality
-NodePool small-nodes  labels=map[attrb.io/sensor-size:small karpenter.sh/nodepool:small-nodes]
+NodePool small-nodes          labels=map[attrb.io/sensor-size:small karpenter.sh/nodepool:small-nodes]
   karpenter <=1.13 plans every new node with :  3 DS  cpu=300m   mem=900Mi    cpu2,cpu4,cpu8
   karpenter >=1.14 c6i.large     plans with        :  1 DS  cpu=100m   mem=300Mi    cpu2
                    c6i.large     actually gets     :  1 DS  cpu=100m   mem=300Mi    cpu2  -> matches reality
   karpenter >=1.14 c6i.2xlarge   plans with        :  1 DS  cpu=100m   mem=300Mi    cpu8
                    c6i.2xlarge   actually gets     :  1 DS  cpu=100m   mem=300Mi    cpu8  -> matches reality
-NodePool big-nodes    labels=map[attrb.io/sensor-size:large karpenter.sh/nodepool:big-nodes]
+NodePool big-nodes            labels=map[attrb.io/sensor-size:large karpenter.sh/nodepool:big-nodes]
   karpenter <=1.13 plans every new node with :  3 DS  cpu=1440m  mem=2944Mi   cpu32,cpu48,cpu64
   karpenter >=1.14 c6i.8xlarge   plans with        :  1 DS  cpu=320m   mem=640Mi    cpu32
                    c6i.8xlarge   actually gets     :  1 DS  cpu=320m   mem=640Mi    cpu32  -> matches reality
@@ -24,7 +24,7 @@ NodePool big-nodes    labels=map[attrb.io/sensor-size:large karpenter.sh/nodepoo
                    c6i.16xlarge  actually gets     :  1 DS  cpu=640m   mem=1280Mi   cpu64  -> matches reality
 
 === B. Tiered on a custom NodePool label attrb.io/sensor-size (small / large / default)
-NodePool general      labels=map[karpenter.sh/nodepool:general]
+NodePool general              labels=map[karpenter.sh/nodepool:general]
   karpenter <=1.13 plans every new node with :  1 DS  cpu=100m   mem=300Mi    default
   karpenter >=1.14 c6i.large     plans with        :  1 DS  cpu=100m   mem=300Mi    default
                    c6i.large     actually gets     :  1 DS  cpu=100m   mem=300Mi    default  -> matches reality
@@ -34,13 +34,13 @@ NodePool general      labels=map[karpenter.sh/nodepool:general]
                    c6i.8xlarge   actually gets     :  1 DS  cpu=100m   mem=300Mi    default  -> matches reality
   karpenter >=1.14 c6i.16xlarge  plans with        :  1 DS  cpu=100m   mem=300Mi    default
                    c6i.16xlarge  actually gets     :  1 DS  cpu=100m   mem=300Mi    default  -> matches reality
-NodePool small-nodes  labels=map[attrb.io/sensor-size:small karpenter.sh/nodepool:small-nodes]
+NodePool small-nodes          labels=map[attrb.io/sensor-size:small karpenter.sh/nodepool:small-nodes]
   karpenter <=1.13 plans every new node with :  1 DS  cpu=100m   mem=300Mi    small
   karpenter >=1.14 c6i.large     plans with        :  1 DS  cpu=100m   mem=300Mi    small
                    c6i.large     actually gets     :  1 DS  cpu=100m   mem=300Mi    small  -> matches reality
   karpenter >=1.14 c6i.2xlarge   plans with        :  1 DS  cpu=100m   mem=300Mi    small
                    c6i.2xlarge   actually gets     :  1 DS  cpu=100m   mem=300Mi    small  -> matches reality
-NodePool big-nodes    labels=map[attrb.io/sensor-size:large karpenter.sh/nodepool:big-nodes]
+NodePool big-nodes            labels=map[attrb.io/sensor-size:large karpenter.sh/nodepool:big-nodes]
   karpenter <=1.13 plans every new node with :  1 DS  cpu=400m   mem=1024Mi   large
   karpenter >=1.14 c6i.8xlarge   plans with        :  1 DS  cpu=400m   mem=1024Mi   large
                    c6i.8xlarge   actually gets     :  1 DS  cpu=400m   mem=1024Mi   large  -> matches reality
@@ -48,7 +48,7 @@ NodePool big-nodes    labels=map[attrb.io/sensor-size:large karpenter.sh/nodepoo
                    c6i.16xlarge  actually gets     :  1 DS  cpu=400m   mem=1024Mi   large  -> matches reality
 
 === C. Tiered on karpenter.sh/nodepool (NodePool name, no NodePool changes needed)
-NodePool general      labels=map[karpenter.sh/nodepool:general]
+NodePool general              labels=map[karpenter.sh/nodepool:general]
   karpenter <=1.13 plans every new node with :  1 DS  cpu=100m   mem=300Mi    default
   karpenter >=1.14 c6i.large     plans with        :  1 DS  cpu=100m   mem=300Mi    default
                    c6i.large     actually gets     :  1 DS  cpu=100m   mem=300Mi    default  -> matches reality
@@ -58,13 +58,13 @@ NodePool general      labels=map[karpenter.sh/nodepool:general]
                    c6i.8xlarge   actually gets     :  1 DS  cpu=100m   mem=300Mi    default  -> matches reality
   karpenter >=1.14 c6i.16xlarge  plans with        :  1 DS  cpu=100m   mem=300Mi    default
                    c6i.16xlarge  actually gets     :  1 DS  cpu=100m   mem=300Mi    default  -> matches reality
-NodePool small-nodes  labels=map[attrb.io/sensor-size:small karpenter.sh/nodepool:small-nodes]
+NodePool small-nodes          labels=map[attrb.io/sensor-size:small karpenter.sh/nodepool:small-nodes]
   karpenter <=1.13 plans every new node with :  1 DS  cpu=100m   mem=300Mi    default
   karpenter >=1.14 c6i.large     plans with        :  1 DS  cpu=100m   mem=300Mi    default
                    c6i.large     actually gets     :  1 DS  cpu=100m   mem=300Mi    default  -> matches reality
   karpenter >=1.14 c6i.2xlarge   plans with        :  1 DS  cpu=100m   mem=300Mi    default
                    c6i.2xlarge   actually gets     :  1 DS  cpu=100m   mem=300Mi    default  -> matches reality
-NodePool big-nodes    labels=map[attrb.io/sensor-size:large karpenter.sh/nodepool:big-nodes]
+NodePool big-nodes            labels=map[attrb.io/sensor-size:large karpenter.sh/nodepool:big-nodes]
   karpenter <=1.13 plans every new node with :  1 DS  cpu=400m   mem=1024Mi   large
   karpenter >=1.14 c6i.8xlarge   plans with        :  1 DS  cpu=400m   mem=1024Mi   large
                    c6i.8xlarge   actually gets     :  1 DS  cpu=400m   mem=1024Mi   large  -> matches reality
@@ -72,7 +72,7 @@ NodePool big-nodes    labels=map[attrb.io/sensor-size:large karpenter.sh/nodepoo
                    c6i.16xlarge  actually gets     :  1 DS  cpu=400m   mem=1024Mi   large  -> matches reality
 
 === D. Two tiers keyed on instance-cpu value ranges (well-known label, few DaemonSets)
-NodePool general      labels=map[karpenter.sh/nodepool:general]
+NodePool general              labels=map[karpenter.sh/nodepool:general]
   karpenter <=1.13 plans every new node with :  2 DS  cpu=500m   mem=1324Mi   default,large
   karpenter >=1.14 c6i.large     plans with        :  1 DS  cpu=100m   mem=300Mi    default
                    c6i.large     actually gets     :  1 DS  cpu=100m   mem=300Mi    default  -> matches reality
@@ -82,15 +82,130 @@ NodePool general      labels=map[karpenter.sh/nodepool:general]
                    c6i.8xlarge   actually gets     :  1 DS  cpu=400m   mem=1024Mi   large  -> matches reality
   karpenter >=1.14 c6i.16xlarge  plans with        :  1 DS  cpu=400m   mem=1024Mi   large
                    c6i.16xlarge  actually gets     :  1 DS  cpu=400m   mem=1024Mi   large  -> matches reality
-NodePool small-nodes  labels=map[attrb.io/sensor-size:small karpenter.sh/nodepool:small-nodes]
+NodePool small-nodes          labels=map[attrb.io/sensor-size:small karpenter.sh/nodepool:small-nodes]
   karpenter <=1.13 plans every new node with :  1 DS  cpu=100m   mem=300Mi    default
   karpenter >=1.14 c6i.large     plans with        :  1 DS  cpu=100m   mem=300Mi    default
                    c6i.large     actually gets     :  1 DS  cpu=100m   mem=300Mi    default  -> matches reality
   karpenter >=1.14 c6i.2xlarge   plans with        :  1 DS  cpu=100m   mem=300Mi    default
                    c6i.2xlarge   actually gets     :  1 DS  cpu=100m   mem=300Mi    default  -> matches reality
-NodePool big-nodes    labels=map[attrb.io/sensor-size:large karpenter.sh/nodepool:big-nodes]
+NodePool big-nodes            labels=map[attrb.io/sensor-size:large karpenter.sh/nodepool:big-nodes]
   karpenter <=1.13 plans every new node with :  1 DS  cpu=400m   mem=1024Mi   large
   karpenter >=1.14 c6i.8xlarge   plans with        :  1 DS  cpu=400m   mem=1024Mi   large
                    c6i.8xlarge   actually gets     :  1 DS  cpu=400m   mem=1024Mi   large  -> matches reality
   karpenter >=1.14 c6i.16xlarge  plans with        :  1 DS  cpu=400m   mem=1024Mi   large
                    c6i.16xlarge  actually gets     :  1 DS  cpu=400m   mem=1024Mi   large  -> matches reality
+
+
+##### E. The customer's NodePools (on-demand c6i, 2-32 vCPU inside ONE pool) #####
+
+=== E1. Single DaemonSet mode (daemonset.enabled=true): one size for every node, nothing to mis-count
+NodePool on-demand-c6i        labels=map[karpenter.sh/capacity-type:on-demand karpenter.sh/nodepool:on-demand-c6i node.riskified.com/Application:default node.riskified.com/capacityType:on-demand node.riskified.com/instanceCategory:c node.riskified.com/instanceFamilies:c6i node.riskified.com/nodePoolType:on-demand]
+                             taints=[{node.riskified.com/capacityType on-demand NoSchedule <nil>}]
+  karpenter <=1.13 plans every new node with :  1 DS  cpu=100m   mem=300Mi    sensor
+  karpenter >=1.14 c6i.large     plans with        :  1 DS  cpu=100m   mem=300Mi    sensor
+                   c6i.large     actually gets     :  1 DS  cpu=100m   mem=300Mi    sensor  -> matches reality
+  karpenter >=1.14 c6i.xlarge    plans with        :  1 DS  cpu=100m   mem=300Mi    sensor
+                   c6i.xlarge    actually gets     :  1 DS  cpu=100m   mem=300Mi    sensor  -> matches reality
+  karpenter >=1.14 c6i.2xlarge   plans with        :  1 DS  cpu=100m   mem=300Mi    sensor
+                   c6i.2xlarge   actually gets     :  1 DS  cpu=100m   mem=300Mi    sensor  -> matches reality
+  karpenter >=1.14 c6i.4xlarge   plans with        :  1 DS  cpu=100m   mem=300Mi    sensor
+                   c6i.4xlarge   actually gets     :  1 DS  cpu=100m   mem=300Mi    sensor  -> matches reality
+  karpenter >=1.14 c6i.8xlarge   plans with        :  1 DS  cpu=100m   mem=300Mi    sensor
+                   c6i.8xlarge   actually gets     :  1 DS  cpu=100m   mem=300Mi    sensor  -> matches reality
+NodePool on-demand-c6i-avro   labels=map[karpenter.sh/capacity-type:on-demand karpenter.sh/nodepool:on-demand-c6i-avro node.riskified.com/Application:avro node.riskified.com/capacityType:on-demand node.riskified.com/instanceCategory:c node.riskified.com/instanceFamilies:c6i node.riskified.com/nodePoolType:on-demand]
+                             taints=[{node.riskified.com/capacityType on-demand NoSchedule <nil>} {node.riskified.com/Application avro NoSchedule <nil>}]
+  karpenter <=1.13 plans every new node with :  1 DS  cpu=100m   mem=300Mi    sensor
+  karpenter >=1.14 c6i.large     plans with        :  1 DS  cpu=100m   mem=300Mi    sensor
+                   c6i.large     actually gets     :  1 DS  cpu=100m   mem=300Mi    sensor  -> matches reality
+  karpenter >=1.14 c6i.xlarge    plans with        :  1 DS  cpu=100m   mem=300Mi    sensor
+                   c6i.xlarge    actually gets     :  1 DS  cpu=100m   mem=300Mi    sensor  -> matches reality
+  karpenter >=1.14 c6i.2xlarge   plans with        :  1 DS  cpu=100m   mem=300Mi    sensor
+                   c6i.2xlarge   actually gets     :  1 DS  cpu=100m   mem=300Mi    sensor  -> matches reality
+  karpenter >=1.14 c6i.4xlarge   plans with        :  1 DS  cpu=100m   mem=300Mi    sensor
+                   c6i.4xlarge   actually gets     :  1 DS  cpu=100m   mem=300Mi    sensor  -> matches reality
+  karpenter >=1.14 c6i.8xlarge   plans with        :  1 DS  cpu=100m   mem=300Mi    sensor
+                   c6i.8xlarge   actually gets     :  1 DS  cpu=100m   mem=300Mi    sensor  -> matches reality
+
+=== E2. Attribute karpconfig mode (daemonset.karpenter=true): 13 CPU tiers + default on karpenter.k8s.aws/instance-cpu
+NodePool on-demand-c6i        labels=map[karpenter.sh/capacity-type:on-demand karpenter.sh/nodepool:on-demand-c6i node.riskified.com/Application:default node.riskified.com/capacityType:on-demand node.riskified.com/instanceCategory:c node.riskified.com/instanceFamilies:c6i node.riskified.com/nodePoolType:on-demand]
+                             taints=[{node.riskified.com/capacityType on-demand NoSchedule <nil>}]
+  karpenter <=1.13 plans every new node with :  8 DS  cpu=1240m  mem=3100Mi   cpu12,cpu16,cpu2,cpu24,cpu32,cpu4,cpu8,default
+  karpenter >=1.14 c6i.large     plans with        :  1 DS  cpu=100m   mem=300Mi    cpu2
+                   c6i.large     actually gets     :  1 DS  cpu=100m   mem=300Mi    cpu2  -> matches reality
+  karpenter >=1.14 c6i.xlarge    plans with        :  1 DS  cpu=100m   mem=300Mi    cpu4
+                   c6i.xlarge    actually gets     :  1 DS  cpu=100m   mem=300Mi    cpu4  -> matches reality
+  karpenter >=1.14 c6i.2xlarge   plans with        :  1 DS  cpu=100m   mem=300Mi    cpu8
+                   c6i.2xlarge   actually gets     :  1 DS  cpu=100m   mem=300Mi    cpu8  -> matches reality
+  karpenter >=1.14 c6i.4xlarge   plans with        :  1 DS  cpu=160m   mem=320Mi    cpu16
+                   c6i.4xlarge   actually gets     :  1 DS  cpu=160m   mem=320Mi    cpu16  -> matches reality
+  karpenter >=1.14 c6i.8xlarge   plans with        :  1 DS  cpu=320m   mem=640Mi    cpu32
+                   c6i.8xlarge   actually gets     :  1 DS  cpu=320m   mem=640Mi    cpu32  -> matches reality
+NodePool on-demand-c6i-avro   labels=map[karpenter.sh/capacity-type:on-demand karpenter.sh/nodepool:on-demand-c6i-avro node.riskified.com/Application:avro node.riskified.com/capacityType:on-demand node.riskified.com/instanceCategory:c node.riskified.com/instanceFamilies:c6i node.riskified.com/nodePoolType:on-demand]
+                             taints=[{node.riskified.com/capacityType on-demand NoSchedule <nil>} {node.riskified.com/Application avro NoSchedule <nil>}]
+  karpenter <=1.13 plans every new node with :  8 DS  cpu=1240m  mem=3100Mi   cpu12,cpu16,cpu2,cpu24,cpu32,cpu4,cpu8,default
+  karpenter >=1.14 c6i.large     plans with        :  1 DS  cpu=100m   mem=300Mi    cpu2
+                   c6i.large     actually gets     :  1 DS  cpu=100m   mem=300Mi    cpu2  -> matches reality
+  karpenter >=1.14 c6i.xlarge    plans with        :  1 DS  cpu=100m   mem=300Mi    cpu4
+                   c6i.xlarge    actually gets     :  1 DS  cpu=100m   mem=300Mi    cpu4  -> matches reality
+  karpenter >=1.14 c6i.2xlarge   plans with        :  1 DS  cpu=100m   mem=300Mi    cpu8
+                   c6i.2xlarge   actually gets     :  1 DS  cpu=100m   mem=300Mi    cpu8  -> matches reality
+  karpenter >=1.14 c6i.4xlarge   plans with        :  1 DS  cpu=160m   mem=320Mi    cpu16
+                   c6i.4xlarge   actually gets     :  1 DS  cpu=160m   mem=320Mi    cpu16  -> matches reality
+  karpenter >=1.14 c6i.8xlarge   plans with        :  1 DS  cpu=320m   mem=640Mi    cpu32
+                   c6i.8xlarge   actually gets     :  1 DS  cpu=320m   mem=640Mi    cpu32  -> matches reality
+
+=== E3. Tiered mode, 3 tiers on karpenter.k8s.aws/instance-cpu: small 2-4 / medium 8-16 / large 32 vCPU (+ catch-all)
+NodePool on-demand-c6i        labels=map[karpenter.sh/capacity-type:on-demand karpenter.sh/nodepool:on-demand-c6i node.riskified.com/Application:default node.riskified.com/capacityType:on-demand node.riskified.com/instanceCategory:c node.riskified.com/instanceFamilies:c6i node.riskified.com/nodePoolType:on-demand]
+                             taints=[{node.riskified.com/capacityType on-demand NoSchedule <nil>}]
+  karpenter <=1.13 plans every new node with :  4 DS  cpu=680m   mem=1560Mi   default,large,medium,small
+  karpenter >=1.14 c6i.large     plans with        :  1 DS  cpu=100m   mem=300Mi    small
+                   c6i.large     actually gets     :  1 DS  cpu=100m   mem=300Mi    small  -> matches reality
+  karpenter >=1.14 c6i.xlarge    plans with        :  1 DS  cpu=100m   mem=300Mi    small
+                   c6i.xlarge    actually gets     :  1 DS  cpu=100m   mem=300Mi    small  -> matches reality
+  karpenter >=1.14 c6i.2xlarge   plans with        :  1 DS  cpu=160m   mem=320Mi    medium
+                   c6i.2xlarge   actually gets     :  1 DS  cpu=160m   mem=320Mi    medium  -> matches reality
+  karpenter >=1.14 c6i.4xlarge   plans with        :  1 DS  cpu=160m   mem=320Mi    medium
+                   c6i.4xlarge   actually gets     :  1 DS  cpu=160m   mem=320Mi    medium  -> matches reality
+  karpenter >=1.14 c6i.8xlarge   plans with        :  1 DS  cpu=320m   mem=640Mi    large
+                   c6i.8xlarge   actually gets     :  1 DS  cpu=320m   mem=640Mi    large  -> matches reality
+NodePool on-demand-c6i-avro   labels=map[karpenter.sh/capacity-type:on-demand karpenter.sh/nodepool:on-demand-c6i-avro node.riskified.com/Application:avro node.riskified.com/capacityType:on-demand node.riskified.com/instanceCategory:c node.riskified.com/instanceFamilies:c6i node.riskified.com/nodePoolType:on-demand]
+                             taints=[{node.riskified.com/capacityType on-demand NoSchedule <nil>} {node.riskified.com/Application avro NoSchedule <nil>}]
+  karpenter <=1.13 plans every new node with :  4 DS  cpu=680m   mem=1560Mi   default,large,medium,small
+  karpenter >=1.14 c6i.large     plans with        :  1 DS  cpu=100m   mem=300Mi    small
+                   c6i.large     actually gets     :  1 DS  cpu=100m   mem=300Mi    small  -> matches reality
+  karpenter >=1.14 c6i.xlarge    plans with        :  1 DS  cpu=100m   mem=300Mi    small
+                   c6i.xlarge    actually gets     :  1 DS  cpu=100m   mem=300Mi    small  -> matches reality
+  karpenter >=1.14 c6i.2xlarge   plans with        :  1 DS  cpu=160m   mem=320Mi    medium
+                   c6i.2xlarge   actually gets     :  1 DS  cpu=160m   mem=320Mi    medium  -> matches reality
+  karpenter >=1.14 c6i.4xlarge   plans with        :  1 DS  cpu=160m   mem=320Mi    medium
+                   c6i.4xlarge   actually gets     :  1 DS  cpu=160m   mem=320Mi    medium  -> matches reality
+  karpenter >=1.14 c6i.8xlarge   plans with        :  1 DS  cpu=320m   mem=640Mi    large
+                   c6i.8xlarge   actually gets     :  1 DS  cpu=320m   mem=640Mi    large  -> matches reality
+
+=== E4. Tiered mode keyed on the pool itself (karpenter.sh/nodepool): exact on every version, but the same size on a 2 and a 32 vCPU node
+NodePool on-demand-c6i        labels=map[karpenter.sh/capacity-type:on-demand karpenter.sh/nodepool:on-demand-c6i node.riskified.com/Application:default node.riskified.com/capacityType:on-demand node.riskified.com/instanceCategory:c node.riskified.com/instanceFamilies:c6i node.riskified.com/nodePoolType:on-demand]
+                             taints=[{node.riskified.com/capacityType on-demand NoSchedule <nil>}]
+  karpenter <=1.13 plans every new node with :  1 DS  cpu=320m   mem=640Mi    c6i
+  karpenter >=1.14 c6i.large     plans with        :  1 DS  cpu=320m   mem=640Mi    c6i
+                   c6i.large     actually gets     :  1 DS  cpu=320m   mem=640Mi    c6i  -> matches reality
+  karpenter >=1.14 c6i.xlarge    plans with        :  1 DS  cpu=320m   mem=640Mi    c6i
+                   c6i.xlarge    actually gets     :  1 DS  cpu=320m   mem=640Mi    c6i  -> matches reality
+  karpenter >=1.14 c6i.2xlarge   plans with        :  1 DS  cpu=320m   mem=640Mi    c6i
+                   c6i.2xlarge   actually gets     :  1 DS  cpu=320m   mem=640Mi    c6i  -> matches reality
+  karpenter >=1.14 c6i.4xlarge   plans with        :  1 DS  cpu=320m   mem=640Mi    c6i
+                   c6i.4xlarge   actually gets     :  1 DS  cpu=320m   mem=640Mi    c6i  -> matches reality
+  karpenter >=1.14 c6i.8xlarge   plans with        :  1 DS  cpu=320m   mem=640Mi    c6i
+                   c6i.8xlarge   actually gets     :  1 DS  cpu=320m   mem=640Mi    c6i  -> matches reality
+NodePool on-demand-c6i-avro   labels=map[karpenter.sh/capacity-type:on-demand karpenter.sh/nodepool:on-demand-c6i-avro node.riskified.com/Application:avro node.riskified.com/capacityType:on-demand node.riskified.com/instanceCategory:c node.riskified.com/instanceFamilies:c6i node.riskified.com/nodePoolType:on-demand]
+                             taints=[{node.riskified.com/capacityType on-demand NoSchedule <nil>} {node.riskified.com/Application avro NoSchedule <nil>}]
+  karpenter <=1.13 plans every new node with :  1 DS  cpu=320m   mem=640Mi    c6i
+  karpenter >=1.14 c6i.large     plans with        :  1 DS  cpu=320m   mem=640Mi    c6i
+                   c6i.large     actually gets     :  1 DS  cpu=320m   mem=640Mi    c6i  -> matches reality
+  karpenter >=1.14 c6i.xlarge    plans with        :  1 DS  cpu=320m   mem=640Mi    c6i
+                   c6i.xlarge    actually gets     :  1 DS  cpu=320m   mem=640Mi    c6i  -> matches reality
+  karpenter >=1.14 c6i.2xlarge   plans with        :  1 DS  cpu=320m   mem=640Mi    c6i
+                   c6i.2xlarge   actually gets     :  1 DS  cpu=320m   mem=640Mi    c6i  -> matches reality
+  karpenter >=1.14 c6i.4xlarge   plans with        :  1 DS  cpu=320m   mem=640Mi    c6i
+                   c6i.4xlarge   actually gets     :  1 DS  cpu=320m   mem=640Mi    c6i  -> matches reality
+  karpenter >=1.14 c6i.8xlarge   plans with        :  1 DS  cpu=320m   mem=640Mi    c6i
+                   c6i.8xlarge   actually gets     :  1 DS  cpu=320m   mem=640Mi    c6i  -> matches reality

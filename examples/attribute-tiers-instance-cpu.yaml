@@ -1,0 +1,32 @@
+# Tiered DaemonSet mode keyed on Karpenter's instance-cpu label: the sensor's size follows
+# the node's vCPU count even when one NodePool spans many sizes (e.g. a pool that admits
+# c6i.large through c6i.8xlarge). Sizes below are the ones Attribute's own karpconfig uses
+# for the same CPU counts; adjust to taste.
+#
+# Requires Karpenter >= 1.14.0 (kubernetes-sigs/karpenter#715, fixed by PR #2486). On older
+# Karpenter every tier whose values fall inside a NodePool's instance-cpu range is charged
+# to every node planned from that pool: with the three tiers below plus the catch-all that
+# is 680m CPU / 1560Mi per node instead of the 100-320m / 300-640Mi one sensor really uses
+# (karpenter-check/output.txt, section E3). Karpenter then leans towards larger instances
+# than the workloads need. The pods themselves still schedule correctly on any version.
+daemonset:
+  enabled: true
+  tierLabelKey: karpenter.k8s.aws/instance-cpu
+  tiers:
+    small:                         # 2 and 4 vCPU, e.g. c6i.large / c6i.xlarge
+      values: ["2", "4"]
+      resources:
+        cpu:    { request: "100m", limit: "200m" }
+        memory: { request: "300Mi", limit: "1Gi" }
+    medium:                        # 8 and 16 vCPU, e.g. c6i.2xlarge / c6i.4xlarge
+      values: ["8", "16"]
+      resources:
+        cpu:    { request: "160m", limit: "800m" }
+        memory: { request: "320Mi", limit: "1600Mi" }
+    large:                         # 32 vCPU, e.g. c6i.8xlarge
+      values: ["32"]
+      resources:
+        cpu:    { request: "320m", limit: "1600m" }
+        memory: { request: "640Mi", limit: "3Gi" }
+# Nodes with any other CPU count, or without the label at all (non-Karpenter nodes),
+# get the catch-all DaemonSet with the chart's regular `sensorresources`.

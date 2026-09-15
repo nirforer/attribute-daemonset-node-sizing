@@ -1,9 +1,17 @@
 // Reproduces Karpenter's DaemonSet-overhead decision for new nodes, using Karpenter's own
-// scheduling library, for three ways of splitting Attribute's sensor DaemonSet.
+// scheduling library, for several ways of splitting Attribute's sensor DaemonSet.
 //
 // preFix  mirrors isDaemonPodCompatible(nct, pod) in karpenter <= v1.13.x  (scheduler.go)
 // postFix mirrors isDaemonPodCompatible(nct, it, pod) in karpenter >= v1.14.0 (PR kubernetes-sigs/karpenter#2486)
 // actual  mirrors isDaemonPodCompatibleWithNode: what lands on the node once it exists (same rule kube-scheduler applies)
+//
+// Both Karpenter versions first drop DaemonSet pods that do not tolerate the NodePool's taints
+// (scheduling.Taints(...).ToleratesPod), then compare requirements; that order is mirrored here.
+//
+// Sections A-D use three synthetic NodePools. Section E replays the customer's real on-demand c6i
+// NodePools: requirements, template labels and taints copied from their rendered
+// karpenter/templates/nodepools.yaml (all five pools share the same requirements and differ only
+// in labels and taints, so two of them are enough).
 package main
 
 import (
@@ -51,6 +59,7 @@ type pool struct {
 	name   string
 	labels map[string]string       // NodePool spec.template.metadata.labels (+ karpenter.sh/nodepool)
 	reqs   scheduling.Requirements // what NewNodeClaimTemplate builds (nodeclaimtemplate.go)
+	taints []corev1.Taint          // NodePool spec.template.spec.taints
 	its    []it
 }
 
@@ -63,7 +72,12 @@ func newPool(name string, labels map[string]string, its []it, reqs ...*schedulin
 	r.Add(scheduling.NewLabelRequirements(all).Values()...)
 	r.Add(scheduling.NewRequirement(v1.NodeRegisteredLabelKey, corev1.NodeSelectorOpIn, "true"))
 	r.Add(scheduling.NewRequirement(v1.NodeInitializedLabelKey, corev1.NodeSelectorOpIn, "true"))
-	return pool{name, all, r, its}
+	return pool{name: name, labels: all, reqs: r, its: its}
+}
+
+func tainted(p pool, taints ...corev1.Taint) pool {
+	p.taints = taints
+	return p
 }
 
 // labels a launched node of this instance type in this pool would carry
@@ -87,7 +101,8 @@ func notIn(k string, v ...string) corev1.NodeSelectorRequirement {
 	return corev1.NodeSelectorRequirement{Key: k, Operator: corev1.NodeSelectorOpNotIn, Values: v}
 }
 
-// ds builds the pod a sensor DaemonSet would create: os/arch expressions like Attribute's template, plus tier expressions.
+// ds builds the pod a sensor DaemonSet would create: os/arch expressions like Attribute's template, plus tier
+// expressions, and the chart's default blanket toleration (daemonset.selectors.tolerations: [{operator: Exists}]).
 func ds(name, cpu, mem string, extra ...corev1.NodeSelectorRequirement) *corev1.Pod {
 	exprs := append([]corev1.NodeSelectorRequirement{
 		in(corev1.LabelOSStable, "linux"), in(corev1.LabelArchStable, "amd64", "arm64")}, extra...)
@@ -104,15 +119,18 @@ func ds(name, cpu, mem string, extra ...corev1.NodeSelectorRequirement) *corev1.
 	}
 }
 
+func tolerates(p pool, pod *corev1.Pod) bool {
+	return scheduling.Taints(p.taints).ToleratesPod(pod) == nil
+}
 func preFix(p pool, pod *corev1.Pod) bool {
-	return p.reqs.IsCompatible(scheduling.NewStrictPodRequirements(pod), scheduling.AllowUndefinedWellKnownLabels)
+	return tolerates(p, pod) && p.reqs.IsCompatible(scheduling.NewStrictPodRequirements(pod), scheduling.AllowUndefinedWellKnownLabels)
 }
 func postFix(p pool, i it, pod *corev1.Pod) bool {
 	pr := scheduling.NewStrictPodRequirements(pod)
-	return p.reqs.IsCompatible(pr, scheduling.AllowUndefinedWellKnownLabels) && i.reqs.Intersects(pr) == nil
+	return tolerates(p, pod) && p.reqs.IsCompatible(pr, scheduling.AllowUndefinedWellKnownLabels) && i.reqs.Intersects(pr) == nil
 }
-func actual(nodeLabels map[string]string, pod *corev1.Pod) bool {
-	return scheduling.NewLabelRequirements(nodeLabels).Compatible(scheduling.NewStrictPodRequirements(pod)) == nil
+func actual(p pool, i it, pod *corev1.Pod) bool {
+	return tolerates(p, pod) && scheduling.NewLabelRequirements(p.nodeLabels(i)).Compatible(scheduling.NewStrictPodRequirements(pod)) == nil
 }
 
 func filter(pods []*corev1.Pod, f func(*corev1.Pod) bool) []*corev1.Pod {
@@ -133,6 +151,35 @@ func describe(pods []*corev1.Pod) string {
 	sort.Strings(names)
 	cpu, mem := rl[corev1.ResourceCPU], rl[corev1.ResourceMemory]
 	return fmt.Sprintf("%2d DS  cpu=%-6s mem=%-8s %s", len(pods), cpu.String(), fmt.Sprintf("%dMi", mem.Value()/1024/1024), strings.Join(names, ","))
+}
+
+type scenario struct {
+	title string
+	pods  []*corev1.Pod
+}
+
+func report(pools []pool, scenarios []scenario) {
+	for _, sc := range scenarios {
+		fmt.Printf("\n=== %s\n", sc.title)
+		for _, p := range pools {
+			fmt.Printf("NodePool %-20s labels=%v", p.name, p.labels)
+			if len(p.taints) > 0 {
+				fmt.Printf("\n%29staints=%v", "", p.taints)
+			}
+			fmt.Println()
+			fmt.Printf("  karpenter <=1.13 plans every new node with : %s\n", describe(filter(sc.pods, func(pod *corev1.Pod) bool { return preFix(p, pod) })))
+			for _, i := range p.its {
+				post := filter(sc.pods, func(pod *corev1.Pod) bool { return postFix(p, i, pod) })
+				act := filter(sc.pods, func(pod *corev1.Pod) bool { return actual(p, i, pod) })
+				verdict := "matches reality"
+				if describe(post) != describe(act) {
+					verdict = "MISMATCH"
+				}
+				fmt.Printf("  karpenter >=1.14 %-13s plans with        : %s\n", i.name, describe(post))
+				fmt.Printf("                   %-13s actually gets     : %s  -> %s\n", i.name, describe(act), verdict)
+			}
+		}
+	}
 }
 
 func main() {
@@ -156,10 +203,7 @@ func main() {
 	}
 	karpDS = append(karpDS, ds("default", "100m", "300Mi", notIn(aws+"instance-cpu", allCPUs...)))
 
-	scenarios := []struct {
-		title string
-		pods  []*corev1.Pod
-	}{
+	report(pools, []scenario{
 		{"A. Attribute karpconfig mode: 13 tiers + default, keyed on karpenter.k8s.aws/instance-cpu (well-known label)", karpDS},
 		{"B. Tiered on a custom NodePool label attrb.io/sensor-size (small / large / default)", []*corev1.Pod{
 			ds("small", "100m", "300Mi", in("attrb.io/sensor-size", "small")),
@@ -171,23 +215,55 @@ func main() {
 		{"D. Two tiers keyed on instance-cpu value ranges (well-known label, few DaemonSets)", []*corev1.Pod{
 			ds("large", "400m", "1Gi", in(aws+"instance-cpu", "32", "48", "64")),
 			ds("default", "100m", "300Mi", notIn(aws+"instance-cpu", "32", "48", "64"))}},
-	}
+	})
 
-	for _, sc := range scenarios {
-		fmt.Printf("\n=== %s\n", sc.title)
-		for _, p := range pools {
-			fmt.Printf("NodePool %-12s labels=%v\n", p.name, p.labels)
-			fmt.Printf("  karpenter <=1.13 plans every new node with : %s\n", describe(filter(sc.pods, func(pod *corev1.Pod) bool { return preFix(p, pod) })))
-			for _, i := range p.its {
-				post := filter(sc.pods, func(pod *corev1.Pod) bool { return postFix(p, i, pod) })
-				act := filter(sc.pods, func(pod *corev1.Pod) bool { return actual(p.nodeLabels(i), pod) })
-				verdict := "matches reality"
-				if describe(post) != describe(act) {
-					verdict = "MISMATCH"
-				}
-				fmt.Printf("  karpenter >=1.14 %-13s plans with        : %s\n", i.name, describe(post))
-				fmt.Printf("                   %-13s actually gets     : %s  -> %s\n", i.name, describe(act), verdict)
-			}
+	// ---- E. the customer's NodePools -------------------------------------------------------------------------
+	// Every c6i size the pool admits: instance-cpu Gt 1 and Lt 34 -> large(2) xlarge(4) 2xlarge(8) 4xlarge(16) 8xlarge(32).
+	// c6i.12xlarge (48) and up are excluded by the NodePool itself, so Karpenter never considers them.
+	rk := "node.riskified.com/"
+	c6i := []it{newIT("c6i.large", 2), newIT("c6i.xlarge", 4), newIT("c6i.2xlarge", 8), newIT("c6i.4xlarge", 16), newIT("c6i.8xlarge", 32)}
+	custReqs := func() []*scheduling.Requirement {
+		return []*scheduling.Requirement{
+			scheduling.NewRequirement(aws+"instance-family", corev1.NodeSelectorOpIn, "c6i"),
+			scheduling.NewRequirement(v1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, "on-demand"),
+			scheduling.NewRequirement(aws+"instance-generation", corev1.NodeSelectorOpGt, "4"),
+			scheduling.NewRequirement(aws+"instance-generation", corev1.NodeSelectorOpLt, "8"),
+			scheduling.NewRequirement(aws+"instance-cpu", corev1.NodeSelectorOpLt, "34"),
+			scheduling.NewRequirement(aws+"instance-cpu", corev1.NodeSelectorOpGt, "1"),
+			scheduling.NewRequirement(rk+"capacity-spread", corev1.NodeSelectorOpIn, "1-ondemand", "2-ondemand"),
+			scheduling.NewRequirement(corev1.LabelArchStable, corev1.NodeSelectorOpIn, "amd64"),
+			scheduling.NewRequirement(corev1.LabelOSStable, corev1.NodeSelectorOpIn, "linux"),
+			scheduling.NewRequirement("run-with-daemonset", corev1.NodeSelectorOpExists),
+			scheduling.NewRequirement(rk+"group", corev1.NodeSelectorOpExists),
 		}
 	}
+	custLabels := func(app string) map[string]string {
+		return map[string]string{rk + "instanceCategory": "c", rk + "instanceFamilies": "c6i", rk + "capacityType": "on-demand",
+			rk + "nodePoolType": "on-demand", v1.CapacityTypeLabelKey: "on-demand", rk + "Application": app}
+	}
+	noSchedule := func(k, v string) corev1.Taint {
+		return corev1.Taint{Key: k, Value: v, Effect: corev1.TaintEffectNoSchedule}
+	}
+	custPools := []pool{
+		tainted(newPool("on-demand-c6i", custLabels("default"), c6i, custReqs()...),
+			noSchedule(rk+"capacityType", "on-demand")),
+		tainted(newPool("on-demand-c6i-avro", custLabels("avro"), c6i, custReqs()...),
+			noSchedule(rk+"capacityType", "on-demand"), noSchedule(rk+"Application", "avro")),
+	}
+	poolNames := []string{"on-demand-c6i", "on-demand-c6i-avro"}
+
+	fmt.Printf("\n\n##### E. The customer's NodePools (on-demand c6i, 2-32 vCPU inside ONE pool) #####\n")
+	report(custPools, []scenario{
+		{"E1. Single DaemonSet mode (daemonset.enabled=true): one size for every node, nothing to mis-count", []*corev1.Pod{
+			ds("sensor", "100m", "300Mi")}},
+		{"E2. Attribute karpconfig mode (daemonset.karpenter=true): 13 CPU tiers + default on karpenter.k8s.aws/instance-cpu", karpDS},
+		{"E3. Tiered mode, 3 tiers on karpenter.k8s.aws/instance-cpu: small 2-4 / medium 8-16 / large 32 vCPU (+ catch-all)", []*corev1.Pod{
+			ds("small", "100m", "300Mi", in(aws+"instance-cpu", "2", "4")),
+			ds("medium", "160m", "320Mi", in(aws+"instance-cpu", "8", "16")),
+			ds("large", "320m", "640Mi", in(aws+"instance-cpu", "32")),
+			ds("default", "100m", "300Mi", notIn(aws+"instance-cpu", "2", "4", "8", "16", "32"))}},
+		{"E4. Tiered mode keyed on the pool itself (karpenter.sh/nodepool): exact on every version, but the same size on a 2 and a 32 vCPU node", []*corev1.Pod{
+			ds("c6i", "320m", "640Mi", in(v1.NodePoolLabelKey, poolNames...)),
+			ds("default", "100m", "300Mi", notIn(v1.NodePoolLabelKey, poolNames...))}},
+	})
 }
