@@ -1,0 +1,47 @@
+{{- /*
+One DaemonSet per profile, pinned via nodeAffinity In <machineTypes>,
+plus an optional catch-all pinned via NotIn <every listed machineType>.
+Together they partition the cluster: every node matches exactly one.
+*/ -}}
+{{- $root := . -}}
+{{- $label := .Values.machineTypeLabel -}}
+
+{{- /* Collect every machine type; fail on empty profiles and on overlap. */ -}}
+{{- $all := list -}}
+{{- $seen := dict -}}
+{{- range $name, $p := .Values.profiles }}
+  {{- if not $p.machineTypes }}
+    {{- fail (printf "profile %q must list at least one machineType" $name) }}
+  {{- end }}
+  {{- range $t := $p.machineTypes }}
+    {{- if hasKey $seen $t }}
+      {{- fail (printf "machine type %q is in both profile %q and profile %q" $t (get $seen $t) $name) }}
+    {{- end }}
+    {{- $_ := set $seen $t $name }}
+    {{- $all = append $all $t }}
+  {{- end }}
+{{- end }}
+
+{{- range $name, $p := .Values.profiles }}
+---
+{{ include "agent.daemonset" (dict
+      "root"        $root
+      "name"        $name
+      "label"       $label
+      "operator"    "In"
+      "values"      $p.machineTypes
+      "resources"   (mergeOverwrite (deepCopy $root.Values.resources) ($p.resources | default dict))
+      "tolerations" ($p.tolerations | default $root.Values.tolerations)) }}
+{{- end }}
+
+{{- if .Values.catchAll.enabled }}
+---
+{{ include "agent.daemonset" (dict
+      "root"        $root
+      "name"        "default"
+      "label"       $label
+      "operator"    "NotIn"
+      "values"      $all
+      "resources"   $root.Values.resources
+      "tolerations" $root.Values.tolerations) }}
+{{- end }}

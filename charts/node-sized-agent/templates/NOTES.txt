@@ -1,0 +1,17 @@
+{{ .Chart.Name }} deployed as release {{ .Release.Name }} in namespace {{ .Release.Namespace }}.
+
+{{- if .Values.nodeSizing.enabled }}
+Node-size tiers (label {{ .Values.nodeSizing.labelKey }}):
+{{- range .Values.nodeSizing.tiers }}
+  - {{ .name }}: {{ join ", " .instanceTypes }}  -> requests {{ .resources.requests | toJson }}
+{{- end }}
+{{- if .Values.nodeSizing.default.enabled }}
+  - default: every other instance type  -> requests {{ .Values.nodeSizing.default.resources.requests | toJson }}
+{{- end }}
+
+Check that every node runs exactly one agent pod with the expected size:
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }} \
+    -o custom-columns='POD:.metadata.name,TIER:.metadata.labels.node-sized-agent/tier,NODE:.spec.nodeName,CPU_REQ:.spec.containers[0].resources.requests.cpu,MEM_REQ:.spec.containers[0].resources.requests.memory'
+{{- else }}
+Node sizing is disabled: a single DaemonSet with fixed resources was rendered.
+{{- end }}

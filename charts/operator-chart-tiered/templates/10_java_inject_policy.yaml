@@ -1,0 +1,153 @@
+{{/*
+MutatingAdmissionPolicy (Kubernetes >= 1.36, GA) that injects the Attribute
+Java agent into opted-in workload pods at admission time:
+
+  1. appends an emptyDir volume + an init container that copies the agent jar
+     out of the agent image into that volume (renamed to targetFileName). That
+     container carries javaAutoInject.securityContext/resources, which default
+     to restricted-PSS-compliant values — it is validated as part of the pod it
+     lands in, so on a hardened cluster an unhardened injected container gets
+     the whole pod rejected;
+  2. mounts the volume read-only into every container;
+  3. merges "-javaagent:<mountPath>/<targetFileName>" into each container's
+     JAVA_TOOL_OPTIONS, preserving any existing value (see files/cel/merge_jto.cel).
+
+Only pods that — or whose namespace — carry the opt-in annotation are matched.
+Disabled by default;
+gated and validated by zouz-operator-chart.validateJavaAutoInject.
+
+NOTE: the CEL below cannot be evaluated by `helm template`/`helm lint`. It is
+exercised end-to-end against a real >=1.36 apiserver via envtest in
+charts/zouz-operator-chart/tests (policy_envtest_test.go), and the
+JAVA_TOOL_OPTIONS value-merge (files/cel/merge_jto.cel) is also unit-tested
+there with cel-go (jto_merge_test.go).
+
+Two patch types on purpose: the init container uses JSONPatch because
+ApplyConfiguration cannot set its atomic `command`; everything else uses
+ApplyConfiguration because a JSONPatch whose `value` is a list of objects
+panics the apiserver (reflect.Set: *structpb.Struct vs *structpb.Value).
+*/}}
+{{- include "zouz-operator-chart.validateJavaAutoInject" . -}}
+{{- if and .Values.javaAutoInject.enabled (eq (include "zouz-operator-chart.javaInjectMode" .) "policy") }}
+{{- $ja := .Values.javaAutoInject }}
+{{- $name := $ja.resourceName }}
+{{- $jaImage := "" }}
+{{- if hasPrefix "@" $ja.image.tag }}
+{{- $jaImage = printf "%s%s" $ja.image.repository $ja.image.tag }}
+{{- else }}
+{{- $jaImage = printf "%s:%s" $ja.image.repository $ja.image.tag }}
+{{- end }}
+{{- $arg := printf "-javaagent:%s/%s" $ja.mountPath $ja.targetFileName }}
+{{- $argLit := $arg | quote }}
+{{- $cp := printf "cp %s %s/%s" $ja.sourcePath $ja.mountPath $ja.targetFileName }}
+{{/* securityContext + resources for the injected init container, as CEL literals.
+     Both are optional (null in values = omit the field entirely), so they are
+     rendered as ", field: <literal>" fragments the init container object below
+     concatenates. Without them the injected container is rejected outright on
+     clusters that enforce restricted Pod Security or require resource limits —
+     see the values.yaml commentary. */}}
+{{- $secCtx := "" }}
+{{- if $ja.securityContext }}
+{{- $secCtx = printf ", securityContext: %s" (include "zouz-operator-chart.celObject" (dict "path" "spec.initContainers.securityContext" "value" $ja.securityContext)) }}
+{{- end }}
+{{- $res := "" }}
+{{- with include "zouz-operator-chart.javaInjectInitResources" . }}
+{{- $res = printf ", resources: %s" . }}
+{{- end }}
+{{/* merge expression: strip the // doc comments, then bind __JVAL__ to the container's existing value and __ARG__ to the agent arg literal */}}
+{{- $rawMerge := .Files.Get "files/cel/merge_jto.cel" }}
+{{- $merge := regexReplaceAll "(?m)^[ \t]*//.*$" $rawMerge "" | trim | replace "__JVAL__" "e.value" | replace "__ARG__" $argLit }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: {{ .Release.Name }}-inject-java-agent
+  labels:
+    app: {{ .Release.Name }}
+    {{- include "zouz-operator-chart.labels" . | nindent 4 }}
+spec:
+  failurePolicy: {{ $ja.failurePolicy }}
+  reinvocationPolicy: {{ $ja.reinvocationPolicy }}
+  matchConstraints:
+    resourceRules:
+      - apiGroups:   [""]
+        apiVersions: ["v1"]
+        operations:  ["CREATE"]
+        resources:   ["pods"]
+  # opted in when EITHER the pod OR its namespace carries the annotation set to
+  # "true". This MUST live in a variable used by the mutations, NOT in
+  # matchConditions: matchConditions only expose object/oldObject/request/
+  # authorizer — namespaceObject is unpopulated there, so a namespace-annotation
+  # check in matchConditions can never match. namespaceObject IS populated in
+  # variables/mutations. has() only makes its LAST selector test-only, so each
+  # intermediate level (metadata) is guarded separately.
+  variables:
+    - name: optedIn
+      expression: >-
+        (has(object.metadata) && has(object.metadata.annotations) &&
+          {{ $ja.injectAnnotation | quote }} in object.metadata.annotations &&
+          object.metadata.annotations[{{ $ja.injectAnnotation | quote }}] == "true")
+        ||
+        (has(namespaceObject.metadata) && has(namespaceObject.metadata.annotations) &&
+          {{ $ja.injectAnnotation | quote }} in namespaceObject.metadata.annotations &&
+          namespaceObject.metadata.annotations[{{ $ja.injectAnnotation | quote }}] == "true")
+  matchConditions:
+    - name: not-already-injected
+      expression: >-
+        !has(object.spec.volumes) ||
+        !object.spec.volumes.exists(v, v.name == {{ $name | quote }})
+  mutations:
+    # 1. init container that copies (and renames) the agent jar into the shared
+    #    volume. This MUST be JSONPatch: ApplyConfiguration refuses to set the
+    #    atomic `command` array ("may not mutate atomic arrays"). We first ensure
+    #    the initContainers array exists with an empty-list add (a list with no
+    #    objects, which avoids the apiserver's list-of-objects JSONPatch panic),
+    #    then append our single container object.
+    - patchType: JSONPatch
+      jsonPatch:
+        expression: >-
+          !variables.optedIn ? [] :
+          (has(object.spec.initContainers) ? [] :
+            [JSONPatch{op: "add", path: "/spec/initContainers", value: []}])
+          + [JSONPatch{op: "add", path: "/spec/initContainers/-",
+              value: Object.spec.initContainers{
+                name: {{ $name | quote }}, image: {{ $jaImage | quote }},
+                imagePullPolicy: {{ $ja.imagePullPolicy | quote }},
+                command: ["/bin/sh", "-c", {{ $cp | quote }}]{{ $secCtx }}{{ $res }},
+                volumeMounts: [Object.spec.initContainers.volumeMounts{name: {{ $name | quote }}, mountPath: {{ $ja.mountPath | quote }}}]}}]
+    # 2. shared volume + per-container agent volumeMount + JAVA_TOOL_OPTIONS merge.
+    #    ApplyConfiguration (server-side-apply) merges volumes and containers by
+    #    name — no array-existence handling, no index loops, and it sidesteps the
+    #    JSONPatch list-of-objects panic. env/volumeMounts are atomic lists, so we
+    #    supply the full computed list (existing + agent) for each container; the
+    #    JAVA_TOOL_OPTIONS value-merge is files/cel/merge_jto.cel.
+    - patchType: ApplyConfiguration
+      applyConfiguration:
+        expression: >-
+          !variables.optedIn ? Object{} :
+          Object{
+            spec: Object.spec{
+              volumes: [Object.spec.volumes{name: {{ $name | quote }}, emptyDir: Object.spec.volumes.emptyDir{}}],
+              containers: object.spec.containers.map(c, Object.spec.containers{
+                name: c.name,
+                env: (has(c.env) ?
+                  (c.env.exists(e, e.name == "JAVA_TOOL_OPTIONS") ?
+                    c.env.map(e, (e.name == "JAVA_TOOL_OPTIONS" && has(e.value)) ?
+                      Object.spec.containers.env{name: e.name, value: {{ $merge }}} : e) :
+                    c.env + [Object.spec.containers.env{name: "JAVA_TOOL_OPTIONS", value: {{ $argLit }}}]) :
+                  [Object.spec.containers.env{name: "JAVA_TOOL_OPTIONS", value: {{ $argLit }}}]),
+                volumeMounts: (has(c.volumeMounts) ? c.volumeMounts : [])
+                  + [Object.spec.containers.volumeMounts{name: {{ $name | quote }}, mountPath: {{ $ja.mountPath | quote }}, readOnly: true}]
+              })
+            }
+          }
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicyBinding
+metadata:
+  name: {{ .Release.Name }}-inject-java-agent
+  labels:
+    app: {{ .Release.Name }}
+    {{- include "zouz-operator-chart.labels" . | nindent 4 }}
+spec:
+  policyName: {{ .Release.Name }}-inject-java-agent
+{{- end }}

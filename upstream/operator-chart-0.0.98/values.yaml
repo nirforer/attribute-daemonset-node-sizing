@@ -1,0 +1,556 @@
+initconfig:
+  enabled: true
+  image: quay.io/attribute/sensor-k8s-init:1.0.14
+  host: "https://sensor.app.attrb.io"
+  create_secret: true
+  orgToken:
+    secretName: attrb-pre-install-hook-secret
+    secretKey: token
+  secretName: "attrb-credentials"
+  # securityContext for the pre-install hook Job container. Defaults to a
+  # hardened, non-privileged profile. The probe needs read-only host access to
+  # discover the cluster name from the kubelet's config (paired with hostPID +
+  # the read-only rootfs mount; hostNetwork covers the cloud metadata endpoint).
+  # It only reads, so:
+  #   - DAC_READ_SEARCH grants read access to permission-protected host files
+  #     (bypasses file/dir permission checks) without full privileged.
+  #   - SYS_PTRACE allows reading other processes' /proc entries, and crucially
+  #     traversing /proc/<host-pid>/root/... magic links into the kubelet's
+  #     mount namespace (e.g. .../root/var/lib/kubelet/kubeconfig).
+  #   - appArmorProfile: Unconfined + seLinuxOptions: spc_t are REQUIRED for the
+  #     above: the default container LSM profiles (runtime/default AppArmor,
+  #     container_t SELinux) block ptrace of host processes, which blocks the
+  #     /proc/<host-pid>/root traversal even with SYS_PTRACE. privileged: true
+  #     used to mask this (K8s auto-swaps to unconfined for privileged pods); at
+  #     privileged: false we must opt back in explicitly. The LSM gate and
+  #     CAP_SYS_PTRACE are checked separately — both must allow the access.
+  # Set `privileged: true` (and drop the capabilities/readOnlyRootFilesystem) to
+  # fall back to the old behavior if the init binary requires more than read
+  # access.
+  securityContext:
+    privileged: false
+    runAsUser: 0
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    appArmorProfile:
+      type: Unconfined
+    seLinuxOptions:
+      type: spc_t
+    capabilities:
+      drop:
+        - ALL
+      add:
+        - DAC_READ_SEARCH
+        - SYS_PTRACE
+clusterinventory:
+  enabled: false
+  image: quay.io/attribute/cluster-inventory:0.1.4
+  replicas: 3
+  resync_time:
+    pods: 1m
+    owners: 1m
+  resources:
+    limits:
+      cpu: 100m
+      memory: 1Gi
+    requests:
+      cpu: 50m
+      memory: 500Mi
+  # Hardened defaults: the inventory is a read-only API-listing gRPC/TCP server,
+  # it needs no host access, root, or capabilities. Pod runs as a non-root UID
+  # with a read-only root filesystem and all caps dropped. If the image writes
+  # to disk, set `securityContext.readOnlyRootFilesystem: false`; if it does not
+  # ship a 65532 user, override `podSecurityContext.runAsUser`/`runAsGroup`.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    fsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    privileged: false
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+image:
+  operator:
+    repository: quay.io/attribute/operator
+    tag: "0.0.32"
+  sensor:
+    repository: quay.io/attribute/sensor
+    tag: "0.0.291"
+resources: {}
+# We usually recommend not to specify default resources and to leave this as a conscious
+# choice for the user. This also increases chances charts run on environments with little
+# resources, such as Minikube. If you do want to specify resources, uncomment the following
+# lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+# limits:
+#   cpu: 100m
+#   memory: 128Mi
+# requests:
+#   cpu: 100m
+#   memory: 128Mi
+
+cluster_name: null
+token: null
+token_is_secret: false
+export_url: "otel-endpoint.app.attrb.io:443"
+# Endpoint the operator and sensors fetch their remote configuration from
+# (exposed to both as the CONFIG_ENDPOINT env var).
+config_endpoint: "https://sensor-config.app.attrb.io"
+rollout_max_unavailable: 10%
+enable_sensors: true
+# Opt-in NetworkPolicies for the chart's pods. Only enforced on a CNI that
+# implements NetworkPolicy (Calico/Cilium/...); a no-op otherwise. hostNetwork
+# pods (the pre-install hook, and the sensor when sensorHostNetwork=true) are
+# not governed by these.
+networkPolicy:
+  enabled: false
+  # true: only restrict ingress, leave egress open (DNS/API/OTEL/Unleash keep
+  # working). false: also add a default-deny-egress policy that allows only DNS
+  # (when allowDNS) plus egressRules below.
+  ingressOnly: true
+  # Allow DNS egress to kube-dns/CoreDNS. Only relevant when ingressOnly=false;
+  # leave true or nothing will resolve.
+  allowDNS: true
+  # Extra egress allow rules, appended verbatim to the egress policy (only used
+  # when ingressOnly=false). NetworkPolicy can't match FQDNs, so encode the IP
+  # CIDRs of the OTEL endpoint, Unleash (featureFlags.url), the config
+  # endpoint, and the kube-apiserver here. Example:
+  #   - to:
+  #       - ipBlock:
+  #           cidr: 0.0.0.0/0
+  #             except:
+  #               - 10.0.0.0/8
+  #     ports:
+  #       - protocol: TCP
+  #         port: 443
+  egressRules: []
+sensorHostNetwork: false
+sensorDNSPolicy: ClusterFirst
+# When true the sensor DaemonSet runs without privileged mode, drops the
+# wide /sys host mount in favour of just /sys/kernel/tracing, mounts /hostfs
+# read-only, and swaps blanket privilege for the minimum capability set the
+# eBPF sensor needs on kernel 5.10+: SYS_ADMIN (uprobe registration was
+# never migrated to CAP_PERFMON in the 5.8 cap-split, and SYS_ADMIN already
+# implies BPF and PERFMON, so those are not added), SYS_PTRACE
+# (/proc/<host-pid>/root traversal into target containers), SYS_RESOURCE
+# (RLIMIT_MEMLOCK for BPF maps on 5.10), and DAC_OVERRIDE (Java
+# instrumentor writes into non-root target containers; strict superset of
+# DAC_READ_SEARCH). AppArmor/SELinux are set to Unconfined/spc_t because
+# the default LSM profiles block the cross-container ptrace that privileged
+# mode used to mask. Full per-capability rationale lives in
+# templates/_sensor_pod.tpl. The host
+# /sys/fs/cgroup is not mounted: the sensor's cgroup reads are tolerant of
+# failure and the runtime-provided in-container /sys/fs/cgroup covers the
+# read-only self-observation paths that do run. Requires kernel 5.10+ and
+# hostPID: true (already set).
+reducePermissions: false
+coverageconfigs:
+  - name: "match-nodes"
+    data:
+      kind: "Node"
+      name: ""
+      namespace: ""
+    targetCoveragePercent: "100"
+sensorresources:
+  cpu:
+    request: "100m"
+    limit: null
+  memory:
+    request: "300Mi"
+    limit: null
+# Feature flags. Operator 0.0.32+ and sensor 0.0.291+ evaluate their flags
+# against Unleash (replacing LaunchDarkly). Both compile in a read-only client
+# token and the default Unleash Edge URL, so there is nothing to configure for a
+# normal install and this whole section can be left alone.
+featureFlags:
+  # Set this only when running your own Unleash Edge in cluster — e.g. to avoid
+  # egress to ff.app.attrb.io — pointing it at that Edge's client API base (the
+  # SDK appends /client/features, so include the /api suffix), for example
+  # "http://unleash-edge.unleash.svc.cluster.local:3063/api". This replaces the
+  # removed `launchdarklyproxy` in-cluster LaunchDarkly relay.
+  #
+  # It is rendered as UNLEASH_URL on the operator Deployment and on the sensor
+  # DaemonSets. The operator additionally forwards it to the sensor pods it
+  # creates at runtime, but only when it is set: leaving it empty keeps those
+  # pod specs byte-identical, so upgrading does not churn every sensor.
+  #
+  # The client token is deliberately NOT configurable: it stays compiled into
+  # both binaries rather than being written into a pod spec where anyone with
+  # `get pod` could read it. Edge in edge mode validates it upstream, so a
+  # self-hosted Edge works with the built-in token unchanged.
+  #
+  # -- Base URL of the Unleash *client* API to evaluate flags against. Empty
+  # (default) means the compiled-in Attribute-hosted Edge,
+  # https://ff.app.attrb.io/api. Only set this to point at your own in-cluster
+  # Unleash Edge.
+  url: ""
+otelproxy:
+  enabled: false
+  image: "otel/opentelemetry-collector:0.132.4"
+  replicas: 1
+  resources:
+    cpu:
+      request: "100m"
+      limit: "200m"
+    memory:
+      request: "300Mi"
+      limit_mib: 1000
+  nodeSelector: null
+  tolerations: null
+  extraProcessorsDefinitions: {}
+  extraProcessors:
+    traces: []
+    metrics: []
+    logs: []
+  extraExportersDefinitions: {}
+  extraExporters:
+    traces: []
+    metrics: []
+    logs: []
+# Cluster-wide read-only (get/watch/list) permissions shared by the operator,
+# the sensor, and (when enabled) the cluster inventory via the
+# "zouz-object-lister" / "attrb-object-lister" ClusterRoles.
+#
+# The default is the historical unrestricted grant (every resource, including
+# Secrets). It exists because workload root-object resolution walks a pod's
+# ownerReference chain up to the topmost owner (e.g. Pod -> ReplicaSet ->
+# Deployment, Pod -> Job -> CronJob, or CRD owners like Argo
+# Rollouts/Workflows), and the CRDs present on a cluster cannot be predicted
+# up front.
+#
+# To restrict the grant (e.g. to exclude Secrets — Kubernetes RBAC has no
+# deny semantics, so exclusion is only possible via an enumerated
+# allowlist), set `rules` to an explicit list; when `rules` is non-empty it
+# replaces the apiGroups/resources wildcard entirely. A curated minimal
+# allowlist covering everything the operator and sensor read cluster-wide is
+# provided in examples/values-minimal-rbac.yaml — use it as-is and append a
+# rule per workload-owner CRD in your cluster. If an owner CRD is missing
+# from the allowlist, its pods are reported as standalone pods instead of
+# being attributed to their workload (the operator logs "Forbidden"
+# list/watch errors for the missing resource); nothing crashes.
+objectlistpermissions:
+  # -- apiGroups for the default single-rule wildcard grant. Ignored when
+  # `rules` is set.
+  apiGroups: ["*"]
+  # -- Resources for the default single-rule wildcard grant. Ignored when
+  # `rules` is set.
+  resources: ["*"]
+  # -- Optional explicit allowlist of {apiGroups, resources} rules (verbs
+  # are always get/watch/list). When non-empty this takes precedence over
+  # apiGroups/resources above. See examples/values-minimal-rbac.yaml for the
+  # recommended minimal set (which deliberately excludes Secrets).
+  rules: []
+use_app_name_label: false
+# When true the sensor DaemonSet pods get JAVA_INSTRUMENTATION_DISABLED=TRUE,
+# which turns off Java application instrumentation in the sensor.
+sensorDisableAutoJavaInstrumentation: false
+# Auto-inject the Attribute Java agent into workload pods at admission time.
+# This is an alternative to the sensor's runtime jattach instrumentation:
+# instead of attaching to running JVMs, it adds the agent at JVM startup via an
+# init container + shared volume + JAVA_TOOL_OPTIONS.
+#
+# Two interchangeable backends produce the identical mutation; `mode` selects:
+#   - "policy"  - a MutatingAdmissionPolicy (in-apiserver CEL). Requires
+#                 Kubernetes >= 1.36 (the API is GA there).
+#   - "webhook" - a MutatingWebhookConfiguration + a small admission webhook
+#                 server (this chart's operator image, --webhook). Works on
+#                 Kubernetes >= 1.16, for clusters older than 1.36.
+#   - "auto"    - (default) pick "policy" on >= 1.36, else "webhook".
+#
+# Disabled by default. When enabled:
+#   - requires sensorDisableAutoJavaInstrumentation=true, so the sensor's runtime Java
+#     instrumentation and this load-time injection never run together.
+#   - only pods carrying the opt-in annotation (injectAnnotation=true), or in a
+#     namespace carrying it, are instrumented.
+javaAutoInject:
+  enabled: false
+  # Backend selector: auto | policy | webhook (see above).
+  mode: auto
+  # failurePolicy for the chosen admission backend: "Ignore" (recommended for
+  # prod — an error degrades to "not instrumented" instead of blocking pod
+  # creation) or "Fail" (surfaces errors as admission denials; useful for
+  # debugging, but a broken backend then blocks matching pod creation).
+  failurePolicy: Ignore
+  # reinvocationPolicy for the chosen admission backend: "Never" or "IfNeeded".
+  reinvocationPolicy: Never
+  # Settings specific to the webhook backend (ignored in policy mode).
+  webhook:
+    # Replicas of the webhook Deployment (3 = HA across a node drain/rollout).
+    replicas: 3
+    # Container port the webhook server listens on (TLS). When
+    # networkPolicy.enabled=true the chart opens this port to all sources (the
+    # apiserver's address is not selectable); everything else stays default-deny.
+    port: 8443
+    # Admission timeout the apiserver waits for the webhook, in seconds. This is
+    # the deadline before the apiserver gives up on a pod CREATE and applies
+    # failurePolicy — NOT a target latency. The handler itself does no I/O (it
+    # unmarshals the pod, reads an in-memory namespace cache and returns a patch),
+    # so it answers in well under a millisecond; what can actually consume the
+    # budget is a cold TLS handshake, the apiserver-to-pod network path, or CPU
+    # throttling at the container's limit.
+    #
+    # 2s leaves roughly three orders of magnitude of headroom over the expected
+    # reply while still absorbing those spikes. Going much lower trades a rare
+    # latency cost for a common correctness one: under the default
+    # failurePolicy=Ignore a tripped timeout is a silently un-instrumented pod,
+    # which is far harder to notice than a slow one. (For reference, Kubernetes'
+    # own default when this is unset is 10s.)
+    #
+    # Note this budget is spent per pod CREATE only in namespaces the webhook is
+    # called for at all — narrowing namespaceSelector below removes the cost
+    # entirely for everything else, which is the stronger lever.
+    timeoutSeconds: 2
+    # Validity of the self-signed serving cert the chart generates, in days.
+    certDurationDays: 3650
+    # Optional label-based namespaceSelector narrowing which namespaces are sent
+    # to the webhook at all (annotation opt-in still applies on top).
+    #
+    # Unlike the policy backend (CEL evaluated inside the apiserver), every pod
+    # CREATE in a matching namespace round-trips through this webhook. The
+    # failurePolicy=Ignore default plus timeoutSeconds keep an outage from
+    # blocking pods, but on large clusters the added admission latency is
+    # cluster-wide — narrow the scope to the namespaces that use injection, e.g.:
+    #   namespaceSelector:
+    #     matchLabels:
+    #       attrb.io/inject-java: "true"
+    #
+    # The release namespace and kube-system are ALWAYS excluded (merged into
+    # whatever is set here), so a webhook outage under failurePolicy=Fail can
+    # never block re-creation of the webhook's own pods. Empty = all other
+    # namespaces.
+    namespaceSelector: {}
+    # Spread the replicas across nodes, so one node failure or drain cannot take
+    # the whole webhook down at once. One of:
+    #   preferred - (default) soft podAntiAffinity on kubernetes.io/hostname.
+    #               Spreads when the cluster has the nodes, co-locates when it
+    #               doesn't. Safe everywhere, including single-node clusters.
+    #   required  - hard podAntiAffinity. Guarantees spreading, but replicas
+    #               beyond the node count stay Pending forever — and a webhook
+    #               that never becomes ready degrades (under failurePolicy=Ignore)
+    #               to silently not injecting. Only set this when you know the
+    #               cluster has at least `replicas` schedulable nodes.
+    #   none      - no anti-affinity at all.
+    antiAffinity: preferred
+    # Keep a replica serving through voluntary disruptions (node drains, cluster
+    # upgrades). Expressed as maxUnavailable rather than minAvailable so a
+    # single-replica install can still be drained rather than wedging the drain
+    # forever on its only pod.
+    podDisruptionBudget:
+      enabled: true
+      maxUnavailable: 1
+    # Seconds a terminating webhook pod keeps serving before it is asked to shut
+    # down (a preStop sleep). Endpoints removal is not instantaneous, so without
+    # this the apiserver briefly keeps sending admission requests to a pod that
+    # has stopped listening — and under failurePolicy=Ignore the pods created in
+    # that window are silently left uninstrumented, on every upgrade and drain.
+    # terminationGracePeriodSeconds is derived from this (+20s for the server's own
+    # graceful shutdown), so it can never be set shorter than the drain.
+    preStopDrainSeconds: 5
+    # Resource requests/limits for the webhook pods.
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+      limits:
+        cpu: "200m"
+        memory: "128Mi"
+  # busybox-based multiarch image that ships the agent jar at sourcePath.
+  image:
+    repository: quay.io/attribute/java-agent
+    tag: "0.0.11"
+  # Pinned/immutable tag, so use the node's cached image and only pull when missing.
+  imagePullPolicy: IfNotPresent
+  # Path of the agent jar inside the image above.
+  sourcePath: /jagent/jagent.jar
+  # File name the agent is copied to in the shared volume (the rename target).
+  targetFileName: attribute-jagent.jar
+  # Mount path of the shared emptyDir holding the copied agent jar.
+  mountPath: /attrb-jagent
+  # Pods are instrumented when this annotation is set to "true" on the pod OR
+  # on the pod's namespace (namespace opt-in instruments every pod in it).
+  injectAnnotation: instrumentation.attrb.io/inject-java
+  # Name of the injected volume / init container (also used as the idempotency marker).
+  resourceName: attrb-jagent
+  # securityContext for the INJECTED init container (the one that copies the
+  # agent jar into the shared volume). Both backends apply it identically.
+  #
+  # The default is Pod Security Standards *restricted*-compliant, because the
+  # injected container is validated as part of the pod it lands in: on a hardened
+  # cluster (PSA `enforce: restricted`, or an equivalent Kyverno/Gatekeeper PSS
+  # policy) a container carrying no securityContext is rejected — and since our
+  # mutation runs before validation, that rejection kills the customer's whole
+  # pod, not just the injection. Restricted requires all four of
+  # allowPrivilegeEscalation=false, capabilities.drop=[ALL], runAsNonRoot=true
+  # and a non-Unconfined seccompProfile; readOnlyRootFilesystem is not required
+  # by restricted but is set because the copy only ever writes to the mounted
+  # emptyDir.
+  #
+  # runAsUser/runAsGroup match the agent image's own USER (65532, "nonroot"), and
+  # are pinned rather than inherited so injection also survives a pod whose
+  # pod-level securityContext sets runAsUser: 0 — inheriting that would
+  # contradict runAsNonRoot and the kubelet would refuse to start the container.
+  # The copied jar keeps mode 0644, so the application container reads it
+  # whatever UID it runs as.
+  #
+  # Two overrides worth knowing:
+  #   - OpenShift: the restricted-v2 SCC assigns each namespace its own UID range
+  #     and rejects a container requesting a UID outside it. Set runAsUser and
+  #     runAsGroup to null there; the agent image already runs non-root, so
+  #     runAsNonRoot: true still holds without pinning the UID.
+  #   - Set the whole block to null to inject no securityContext at all (the
+  #     pre-0.0.97 behaviour).
+  securityContext:
+    allowPrivilegeEscalation: false
+    privileged: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    capabilities:
+      drop: ["ALL"]
+    seccompProfile:
+      type: RuntimeDefault
+  # resources for the injected init container. Set by default because hardened
+  # clusters commonly also require every container to declare requests AND
+  # limits (e.g. Kyverno's require-requests-limits), which an injected container
+  # carrying none fails — the same class of rejection as a missing
+  # securityContext.
+  #
+  # requests == limits deliberately: pod QoS is computed over init containers
+  # too, so unequal values here would silently demote a Guaranteed pod to
+  # Burstable. The values only need to cover a `cp` of the agent jar; the CPU
+  # limit is what bounds how long that copy adds to pod startup, so it is not
+  # set lower. Set to null to inject no resources at all.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+operator:
+  selectors:
+    nodeSelector: null
+    tolerations: null
+  # Hardened defaults: the operator is a controller that only talks to the
+  # Kubernetes API, it needs no host access, root, or capabilities. Pod runs as
+  # a non-root UID with a read-only root filesystem and all caps dropped. The
+  # operator image declares `USER root` but the binary does not require it, so a
+  # non-root UID is safe. If the operator writes to disk, set
+  # `securityContext.readOnlyRootFilesystem: false`.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    fsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    privileged: false
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+daemonset:
+  enabled: false
+  selectors:
+    nodeSelector: null
+    tolerations:
+      - operator: Exists
+  karpenter: false
+  karpconfig:
+    default:
+      cpus: [2, 4, 8, 12, 16, 24, 32, 48, 64, 72, 96, 128, 192]
+    cpu2:
+      cpu: 2
+      request: "100m"
+      limit: "100m"
+      mem_request: "300Mi"
+      mem_limit: "1Gi"
+    cpu4:
+      cpu: 4
+      request: "100m"
+      limit: "200m"
+      mem_request: "300Mi"
+      mem_limit: "1Gi"
+    cpu8:
+      cpu: 8
+      request: "100m"
+      limit: "400m"
+      mem_request: "300Mi"
+      mem_limit: "1Gi"
+    cpu12:
+      cpu: 12
+      request: "120m"
+      limit: "600m"
+      mem_request: "300Mi"
+      mem_limit: "1200Mi"
+    cpu16:
+      cpu: 16
+      request: "160m"
+      limit: "800m"
+      mem_request: "320Mi"
+      mem_limit: "1600Mi"
+    cpu24:
+      cpu: 24
+      request: "240m"
+      limit: "1200m"
+      mem_request: "640Mi"
+      mem_limit: "3Gi"
+    cpu32:
+      cpu: 32
+      request: "320m"
+      limit: "1600m"
+      mem_request: "640Mi"
+      mem_limit: "3Gi"
+    cpu48:
+      cpu: 48
+      request: "480m"
+      limit: "2400m"
+      mem_request: "1Gi"
+      mem_limit: "4Gi"
+    cpu64:
+      cpu: 64
+      request: "640m"
+      limit: "3200m"
+      mem_request: "1280Mi"
+      mem_limit: "6Gi"
+    cpu72:
+      cpu: 72
+      request: "720m"
+      limit: "3600m"
+      mem_request: "1500Mi"
+      mem_limit: "8Gi"
+    cpu96:
+      cpu: 96
+      request: "960m"
+      limit: "4800m"
+      mem_request: "1960Mi"
+      mem_limit: "9Gi"
+    cpu128:
+      cpu: 128
+      request: "1280m"
+      limit: "6400m"
+      mem_request: "2560Mi"
+      mem_limit: "12Gi"
+    cpu192:
+      cpu: 192
+      request: "1920m"
+      limit: "9600m"
+      mem_request: "4Gi"
+      mem_limit: "19Gi"
+extraEnv: []
+extraLabels: {}
+global:
+  nodeSelector: null
+  tolerations: null
+priorityclass:
+  enabled: false
+  value: 1000000
+  existingName: ""

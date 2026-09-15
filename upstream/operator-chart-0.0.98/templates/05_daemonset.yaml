@@ -1,0 +1,157 @@
+{{- if eq .Values.enable_sensors true -}}
+{{- if and (eq .Values.daemonset.enabled true) (eq .Values.daemonset.karpenter false) -}}
+
+{{- $exporturl := .Values.export_url -}}
+{{- if eq .Values.otelproxy.enabled true -}}
+{{- $exporturl = printf "%s-collector.%s.svc.cluster.local:4317" .Release.Name .Release.Namespace -}}
+{{- end -}}
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ .Release.Name }}
+    {{- include "zouz-operator-chart.labels" . | nindent 4 }}
+spec:
+  selector: 
+    matchLabels:
+      {{- include "zouz-operator-chart.selectorLabels" . | nindent 6 }}
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: {{ .Values.rollout_max_unavailable }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}
+        attrb.io/inventory-client: "true"
+        {{- include "zouz-operator-chart.labels" . | nindent 8 }}
+    spec:
+      tolerations: 
+      {{- if .Values.daemonset.selectors.tolerations }}
+      {{- .Values.daemonset.selectors.tolerations | toYaml | nindent 8 }}
+      {{- end }}
+      nodeSelector:
+      {{- if .Values.daemonset.selectors.nodeSelector }}
+      {{- .Values.daemonset.selectors.nodeSelector | toYaml | nindent 8 }}
+      {{- end }}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/os
+                operator: In
+                values:
+                - linux
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                - amd64
+                - arm64
+
+      serviceAccountName: "{{ include "zouz-operator-chart.sensorServiceAccountName" . }}"
+
+      {{- if .Values.priorityclass.existingName }}
+      priorityClassName: {{ .Values.priorityclass.existingName }}
+      {{- else if .Values.priorityclass.enabled }}
+      priorityClassName: {{ include "zouz-operator-chart.sensorPriorityClassName" . }}
+      {{- end }}
+
+      hostPID: true
+      hostNetwork: {{ .Values.sensorHostNetwork }}
+      dnsPolicy: {{ .Values.sensorDNSPolicy }}
+      volumes:
+      {{- include "zouz-operator-chart.sensorVolumes" . | nindent 6 }}
+
+      containers:
+      - name: zprobe
+        image: "{{ include "zouz-operator-chart.sensorImage" . }}"
+        imagePullPolicy: IfNotPresent
+
+        command: [ "/app/zprobe" ]
+        args:
+        - "-rootfs=/hostfs"
+        - "-procfs={{ include "zouz-operator-chart.sensorProcfsPath" . }}"
+        - "-no-otel-collector"
+        - "-incluster"
+        {{- if and (eq .Values.token_is_secret false) (eq .Values.initconfig.enabled false) }}
+        - "-bearer-token={{ .Values.token }}"
+        {{- end }}
+        - "-oteladdr={{ $exporturl }}"
+
+        env:
+        - name: DISABLE_UTILIZATION_METRICS
+          value: "TRUE"
+        - name: K8S_CURRENT_NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: MEMORY_LIMIT_BYTES
+          valueFrom:
+            resourceFieldRef:
+              resource: limits.memory
+              divisor: "1"
+        - name: USE_APP_TAGS
+          value: "{{ .Values.use_app_name_label }}"
+        - name: CONFIG_ENDPOINT
+          value: "{{ .Values.config_endpoint }}"
+        {{- if .Values.sensorDisableAutoJavaInstrumentation }}
+        - name: JAVA_INSTRUMENTATION_DISABLED
+          value: "TRUE"
+        {{- end }}
+        {{- if (.Values.featureFlags | default dict).url }}
+        {{- include "zouz-operator-chart.featureFlagsEnv" . | nindent 8 }}
+        {{- end }}
+        {{- if eq .Values.initconfig.enabled true }}
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.initconfig.secretName | quote }}
+              key: token
+        {{- else if eq .Values.token_is_secret true }}
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.token }}
+              key: {{ .Values.token }}
+        {{- end }}
+        {{- if eq .Values.initconfig.enabled false }}
+        - name: CLUSTER_NAME
+          value: {{ .Values.cluster_name | quote }}
+        {{- else }}
+        - name: CLUSTER_NAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.initconfig.secretName | quote }}
+              key: clustername
+        {{- end }}
+        {{- if eq .Values.clusterinventory.enabled true }}
+        - name: IVP_SERVER_ADDRESS
+          value: "attrb-cluster-inventory.{{ .Release.Namespace }}.svc.cluster.local:9191"
+        {{- end }}
+        {{- with .Values.extraEnv }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+
+        resources:
+          requests:
+            memory: {{ .Values.sensorresources.memory.request }}
+            cpu: {{ .Values.sensorresources.cpu.request }}
+          limits:
+            {{if .Values.sensorresources.memory.limit }}
+            memory: {{ .Values.sensorresources.memory.limit }}
+            {{end}}
+            {{if .Values.sensorresources.cpu.limit }}
+            cpu: {{ .Values.sensorresources.cpu.limit }}
+            {{end}}
+
+        securityContext:
+          {{- include "zouz-operator-chart.sensorSecurityContext" . | nindent 10 }}
+        volumeMounts:
+          {{- include "zouz-operator-chart.sensorVolumeMounts" . | nindent 10 }}
+{{ end }}
+{{ end }}

@@ -1,0 +1,8 @@
+.DS_Store
+# Go build outputs
+karpenter-check/karpcheck
+karpenter-check/karpenter-check
+*.test
+# Helm packaging artefacts
+*.tgz
+charts/*/charts/

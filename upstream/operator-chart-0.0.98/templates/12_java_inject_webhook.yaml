@@ -1,0 +1,406 @@
+{{/*
+Java agent auto-inject — WEBHOOK backend (Kubernetes < 1.36).
+
+Rendered instead of 10_java_inject_policy.yaml when the effective
+javaAutoInject mode is "webhook" (see zouz-operator-chart.javaInjectMode).
+It performs the byte-for-byte same pod mutation as the MutatingAdmissionPolicy,
+but via a MutatingWebhookConfiguration the apiserver calls out to; the server is
+the operator image run with --webhook (package injectwebhook).
+
+TLS: a self-signed CA + serving cert is generated at render time and stored in a
+Secret. `lookup` reuses the existing Secret across `helm upgrade` so the cert
+(and the caBundle wired into the webhook) stays stable and pods don't churn.
+NOTE: `helm template` cannot `lookup`, so a dry-run render always mints a fresh
+cert — that is expected and harmless (a real install/upgrade reuses the Secret).
+*/}}
+{{- include "zouz-operator-chart.validateJavaAutoInject" . -}}
+{{- if and .Values.javaAutoInject.enabled (eq (include "zouz-operator-chart.javaInjectMode" .) "webhook") }}
+{{- $ja := .Values.javaAutoInject }}
+{{/* Default every webhook field individually: `helm upgrade --reuse-values`
+     reuses the previous chart's values and does NOT merge a newer chart's
+     defaults, so on such an upgrade $ja.webhook can be absent/partial. Without
+     these defaults an empty $wh.port renders "--webhook-addr=:", whose trailing
+     colon YAML parses as a map — the apiserver then rejects the Deployment
+     ("cannot unmarshal object into ...args of type string"). */}}
+{{- $wh := $ja.webhook | default dict }}
+{{/* via the helper: 11_networkpolicy.yaml opens this same port, and a mismatch
+     would silently isolate the webhook from the apiserver. */}}
+{{- $whPort := include "zouz-operator-chart.javaInjectWebhookPort" . | int }}
+{{- $whReplicas := $wh.replicas | default 2 }}
+{{/* keep this literal in step with values.yaml's timeoutSeconds */}}
+{{- $whTimeout := $wh.timeoutSeconds | default 2 }}
+{{- $whCertDur := int ($wh.certDurationDays | default 3650) }}
+{{- $whResources := $wh.resources | default dict }}
+{{- $whAntiAffinity := $wh.antiAffinity | default "preferred" }}
+{{- $whPdb := $wh.podDisruptionBudget | default dict }}
+{{/* `| default true` would turn an explicit `enabled: false` back into true, so
+     test for the key instead. */}}
+{{- $whPdbEnabled := true }}
+{{- if hasKey $whPdb "enabled" }}{{- $whPdbEnabled = $whPdb.enabled }}{{- end }}
+{{- $whPdbMaxUnavailable := $whPdb.maxUnavailable | default 1 }}
+{{- $whDrain := int ($wh.preStopDrainSeconds | default 5) }}
+{{/* Grace must comfortably exceed the preStop sleep plus the server's own 10s
+     graceful-shutdown budget, or the kubelet SIGKILLs the container mid-drain and
+     the drain accomplishes nothing. Derived rather than exposed so the two can
+     never be configured into that contradiction. */}}
+{{- $whGrace := add $whDrain 20 }}
+{{- $ns := .Release.Namespace }}
+{{- $svc := printf "%s-inject-java-webhook" .Release.Name }}
+{{- $secretName := printf "%s-tls" $svc }}
+{{- $saName := $svc }}
+{{- $clusterName := printf "%s-inject-java-webhook" (include "zouz-operator-chart.clusterPrefix" .) }}
+{{- $cn := printf "%s.%s.svc" $svc $ns }}
+{{- $altNames := list $cn (printf "%s.%s.svc.cluster.local" $svc $ns) }}
+{{- $dur := $whCertDur }}
+{{/* compute the agent image the webhook injects, matching the policy template */}}
+{{- $jaImage := "" }}
+{{- if hasPrefix "@" $ja.image.tag }}
+{{- $jaImage = printf "%s%s" $ja.image.repository $ja.image.tag }}
+{{- else }}
+{{- $jaImage = printf "%s:%s" $ja.image.repository $ja.image.tag }}
+{{- end }}
+{{/* reuse an existing cert when present, else generate a fresh self-signed one */}}
+{{- $tlsCrt := "" }}
+{{- $tlsKey := "" }}
+{{- $caCrt := "" }}
+{{- $existing := lookup "v1" "Secret" $ns $secretName }}
+{{- if and $existing $existing.data (hasKey $existing.data "tls.crt") (hasKey $existing.data "tls.key") (hasKey $existing.data "ca.crt") }}
+{{- $tlsCrt = index $existing.data "tls.crt" }}
+{{- $tlsKey = index $existing.data "tls.key" }}
+{{- $caCrt = index $existing.data "ca.crt" }}
+{{- else }}
+{{- $ca := genCA (printf "%s-ca" $svc) $dur }}
+{{- $cert := genSignedCert $cn nil $altNames $dur $ca }}
+{{- $tlsCrt = $cert.Cert | b64enc }}
+{{- $tlsKey = $cert.Key | b64enc }}
+{{- $caCrt = $ca.Cert | b64enc }}
+{{- end }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $secretName }}
+  namespace: {{ $ns }}
+  labels:
+    app: "attrb-inject-java-webhook"
+    {{- include "zouz-operator-chart.labels" . | nindent 4 }}
+type: kubernetes.io/tls
+data:
+  tls.crt: {{ $tlsCrt }}
+  tls.key: {{ $tlsKey }}
+  ca.crt: {{ $caCrt }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $saName }}
+  namespace: {{ $ns }}
+  labels:
+    app: "attrb-inject-java-webhook"
+    {{- include "zouz-operator-chart.labels" . | nindent 4 }}
+---
+# Least privilege: the webhook only reads Namespace objects, to honor
+# namespace-level opt-in annotations (admission requests do not carry them).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $clusterName }}
+  labels:
+    app: "attrb-inject-java-webhook"
+    {{- include "zouz-operator-chart.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $clusterName }}
+  labels:
+    app: "attrb-inject-java-webhook"
+    {{- include "zouz-operator-chart.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $clusterName }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $saName }}
+    namespace: {{ $ns }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $svc }}
+  namespace: {{ $ns }}
+  labels:
+    app: "attrb-inject-java-webhook"
+    {{- include "zouz-operator-chart.labels" . | nindent 4 }}
+spec:
+  replicas: {{ $whReplicas }}
+  selector:
+    matchLabels:
+      {{- include "zouz-operator-chart.selectorLabels" . | nindent 6 }}
+      app: "attrb-inject-java-webhook"
+  template:
+    metadata:
+      annotations:
+        {{/*
+        Roll the pods whenever the serving cert changes. The server loads its
+        keypair once at startup (http.Server.ListenAndServeTLS), so without this a
+        regenerated Secret leaves running pods presenting the OLD cert while the
+        webhook config already advertises the NEW caBundle: TLS verification
+        fails and, under the default failurePolicy=Ignore, injection stops
+        silently until something else restarts the pods.
+        On a normal upgrade `lookup` reuses the existing Secret, so this value is
+        stable and no rollout happens.
+        */}}
+        checksum/tls: {{ $tlsCrt | sha256sum }}
+      labels:
+        {{- include "zouz-operator-chart.labels" . | nindent 8 }}
+        app: "attrb-inject-java-webhook"
+    spec:
+      serviceAccountName: {{ $saName }}
+      {{/*
+      Endpoints removal is not instantaneous: for a few seconds after this pod
+      starts terminating, the apiserver can still send it admission requests. If
+      the process has already stopped listening those arrive as connection
+      refused, and under the default failurePolicy=Ignore the pods being created
+      right then are silently left uninstrumented — on every upgrade and every
+      node drain. The preStop sleep keeps the container serving while it is pulled
+      out of the Service; SIGTERM (and the server's graceful shutdown) only fires
+      after it returns.
+      */}}
+      terminationGracePeriodSeconds: {{ $whGrace }}
+      tolerations:
+      {{- if .Values.operator.selectors.tolerations }}
+      {{- .Values.operator.selectors.tolerations | toYaml | nindent 8 }}
+      {{- end }}
+      {{- if .Values.global.tolerations }}
+      {{- .Values.global.tolerations | toYaml | nindent 8 }}
+      {{- end }}
+      nodeSelector:
+      {{- if .Values.operator.selectors.nodeSelector }}
+      {{- .Values.operator.selectors.nodeSelector | toYaml | nindent 8 }}
+      {{- end }}
+      {{- if .Values.global.nodeSelector }}
+      {{- .Values.global.nodeSelector | toYaml | nindent 8 }}
+      {{- end }}
+      {{/*
+      Keep the replicas off one node, so a single node failure or drain cannot
+      take the whole webhook down at once. Soft (preferred) by default: a cluster
+      with fewer schedulable nodes than replicas must still be able to run this,
+      because a Pending webhook pod is worse than a co-located one — under the
+      default failurePolicy=Ignore it degrades to silently not injecting, with
+      nothing surfacing the cause. Set antiAffinity=required to enforce hard
+      spreading once you know the cluster has the nodes for it.
+      */}}
+      {{- if ne $whAntiAffinity "none" }}
+      affinity:
+        podAntiAffinity:
+          {{- if eq $whAntiAffinity "required" }}
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  {{- include "zouz-operator-chart.selectorLabels" . | nindent 18 }}
+                  app: "attrb-inject-java-webhook"
+          {{- else }}
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    {{- include "zouz-operator-chart.selectorLabels" . | nindent 20 }}
+                    app: "attrb-inject-java-webhook"
+          {{- end }}
+      {{- end }}
+      {{- with .Values.operator.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: webhook
+          image: {{ include "zouz-operator-chart.operatorImage" . }}
+          imagePullPolicy: IfNotPresent
+          {{- with .Values.operator.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          args:
+            - /app/zouz-operator
+            - --webhook
+            - "--webhook-addr=:{{ $whPort }}"
+            - --tls-cert=/tls/tls.crt
+            - --tls-key=/tls/tls.key
+            - --inject-image={{ $jaImage }}
+            - --inject-image-pull-policy={{ $ja.imagePullPolicy }}
+            - --inject-source-path={{ $ja.sourcePath }}
+            - --inject-target-file={{ $ja.targetFileName }}
+            - --inject-mount-path={{ $ja.mountPath }}
+            - --inject-annotation={{ $ja.injectAnnotation }}
+            - --inject-resource-name={{ $ja.resourceName }}
+            {{/*
+            securityContext/resources for the *injected* init container (not for
+            this webhook pod) — passed as JSON so the whole block stays a single
+            flag whatever fields it carries, and single-quoted because that JSON
+            contains double quotes. Defaults are restricted-PSS-compliant: the
+            injected container is validated as part of the customer's pod, so an
+            unhardened one gets that pod rejected wherever restricted Pod
+            Security or an equivalent Kyverno/Gatekeeper policy is enforced. Both
+            flags are omitted when the value is null, and the binary rejects
+            unknown fields at startup so a typo cannot silently drop hardening.
+            */}}
+            {{- with $ja.securityContext }}
+            - '--inject-security-context={{ toJson . }}'
+            {{- end }}
+            {{- with $ja.resources }}
+            - '--inject-resources={{ toJson . }}'
+            {{- end }}
+          {{/*
+          Tell the Go runtime about the cgroup limits, as the operator, inventory
+          and pre-install hook already do. Without GOMEMLIMIT the heap grows until
+          the kernel OOMKills the container instead of the runtime collecting
+          harder — which for an admission webhook means injection stops.
+          */}}
+          env:
+            - name: GOMEMLIMIT
+              valueFrom:
+                resourceFieldRef:
+                  divisor: '0'
+                  resource: limits.memory
+            - name: GOMAXPROCS
+              valueFrom:
+                resourceFieldRef:
+                  divisor: '0'
+                  resource: limits.cpu
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sleep", "{{ $whDrain }}"]
+          ports:
+            - name: https
+              containerPort: {{ $whPort }}
+          resources:
+            {{- toYaml $whResources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: https
+              scheme: HTTPS
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          volumeMounts:
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ $secretName }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $svc }}
+  namespace: {{ $ns }}
+  labels:
+    app: "attrb-inject-java-webhook"
+    {{- include "zouz-operator-chart.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "zouz-operator-chart.selectorLabels" . | nindent 4 }}
+    app: "attrb-inject-java-webhook"
+  ports:
+    - name: https
+      port: 443
+      targetPort: https
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: {{ $clusterName }}
+  labels:
+    app: "attrb-inject-java-webhook"
+    {{- include "zouz-operator-chart.labels" . | nindent 4 }}
+webhooks:
+  - name: inject-java.attrb.io
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: {{ $ja.failurePolicy }}
+    reinvocationPolicy: {{ $ja.reinvocationPolicy }}
+    timeoutSeconds: {{ $whTimeout }}
+    clientConfig:
+      service:
+        name: {{ $svc }}
+        namespace: {{ $ns }}
+        path: /mutate
+        port: 443
+      caBundle: {{ $caCrt }}
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+        scope: Namespaced
+    {{/*
+    The release namespace and kube-system are always excluded, merged with any
+    user-provided selector: the webhook intercepts every pod CREATE, so with
+    failurePolicy=Fail an outage would otherwise also block re-creating the
+    webhook's own pods — an unrecoverable deadlock only fixable by deleting this
+    resource. NotIn selects namespaces lacking the kubernetes.io/metadata.name
+    label too, so pre-1.21 clusters degrade to "no exclusion" rather than "no
+    injection".
+    */}}
+    {{- $nsSel := $wh.namespaceSelector | default dict }}
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: ["{{ $ns }}", "kube-system"]
+        {{- with $nsSel.matchExpressions }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with $nsSel.matchLabels }}
+      matchLabels:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- if $whPdbEnabled }}
+---
+{{/*
+Keep at least one replica serving through voluntary disruptions (node drains,
+cluster upgrades) so admission does not go dark mid-maintenance.
+
+maxUnavailable, deliberately, not minAvailable: with minAvailable=1 a
+single-replica install (webhook.replicas=1) can never evict its only pod, and a
+node drain hangs forever on it. maxUnavailable=1 protects a 2-replica install
+identically while letting a 1-replica install drain — the brief non-injection
+window that costs is the right trade against a wedged drain.
+
+policy/v1 is GA in 1.21; below that the chart still supports webhook mode
+(>=1.16), where only policy/v1beta1 exists.
+*/}}
+apiVersion: {{ if semverCompare ">=1.21.0-0" .Capabilities.KubeVersion.Version }}policy/v1{{ else }}policy/v1beta1{{ end }}
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $svc }}
+  namespace: {{ $ns }}
+  labels:
+    app: "attrb-inject-java-webhook"
+    {{- include "zouz-operator-chart.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: {{ $whPdbMaxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "zouz-operator-chart.selectorLabels" . | nindent 6 }}
+      app: "attrb-inject-java-webhook"
+{{- end }}
+{{- end }}

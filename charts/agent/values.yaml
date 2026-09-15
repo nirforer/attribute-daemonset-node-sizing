@@ -1,0 +1,50 @@
+image:
+  repository: registry.example.com/agent
+  tag: ""            # empty -> Chart.appVersion
+
+# Node label the profiles match on. GKE and EKS both set this one.
+machineTypeLabel: node.kubernetes.io/instance-type
+
+# Baseline. Used as-is by the catch-all DaemonSet, and as the base that
+# each profile's resources are deep-merged over, so a profile can override
+# just requests, or just memory, and inherit the rest.
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+
+# Baseline tolerations. A profile's tolerations REPLACE these (lists don't merge).
+tolerations: []
+
+# One DaemonSet per profile. The key becomes the resource name suffix
+# (DNS-1123: lowercase, digits, hyphens). A machine type may appear in
+# only one profile; the render fails otherwise, since two DaemonSets
+# matching the same node would put two pods on it.
+profiles:
+  small:
+    machineTypes: [e2-standard-2, e2-standard-4]
+    resources:
+      requests: {cpu: 50m, memory: 64Mi}
+      limits: {memory: 128Mi}
+  large:
+    machineTypes: [n2-standard-16, n2-standard-32]
+    resources:
+      requests: {cpu: 500m, memory: 1Gi}
+      limits: {memory: 2Gi}
+  gpu:
+    machineTypes: [a2-highgpu-1g]
+    resources:
+      requests: {cpu: 1, memory: 2Gi}
+      limits: {memory: 4Gi}
+    tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+
+# DaemonSet for every node matching no profile. NotIn also matches nodes
+# that lack the label entirely, so unlabeled nodes land here. Uses baseline
+# resources and tolerations. Disable it and unmatched nodes get no pod.
+catchAll:
+  enabled: true

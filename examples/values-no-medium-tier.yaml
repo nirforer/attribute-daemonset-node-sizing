@@ -1,0 +1,19 @@
+# Test override: drop the medium tier so an e2-standard-4 node matches no tier
+# and must be picked up by the catch-all "default" DaemonSet.
+nodeSizing:
+  tiers:
+    - name: small
+      instanceTypes: [e2-medium, e2-standard-2, n2-standard-2]
+      resources:
+        requests: { cpu: 50m,  memory: 64Mi }
+        limits:   { memory: 128Mi }
+    - name: large
+      instanceTypes: [e2-standard-8, e2-standard-16, n2-standard-8, n2-standard-16]
+      resources:
+        requests: { cpu: 250m, memory: 256Mi }
+        limits:   { memory: 512Mi }
+  default:
+    enabled: true
+    resources:
+      requests: { cpu: 75m, memory: 96Mi }
+      limits:   { memory: 192Mi }

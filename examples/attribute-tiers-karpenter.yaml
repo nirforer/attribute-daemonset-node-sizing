@@ -1,0 +1,20 @@
+# Attribute operator-chart, DaemonSet mode split into tiers keyed on a label the
+# customer puts on their Karpenter NodePools (spec.template.metadata.labels).
+daemonset:
+  enabled: true
+  tierLabelKey: attrb.io/sensor-size
+  tiers:
+    large:
+      values: ["large", "xlarge"]
+      resources:
+        cpu:    { request: "300m", limit: "1500m" }
+        memory: { request: "640Mi", limit: "3Gi" }
+    gpu:
+      key: karpenter.sh/nodepool          # this tier is keyed on the NodePool name instead
+      values: ["gpu-pool"]
+      resources:
+        cpu:    { request: "500m" }        # no cpu limit for this tier; the block replaces sensorresources.cpu
+        memory: { request: "1Gi", limit: "4Gi" }
+sensorresources:
+  cpu:    { request: "100m", limit: "200m" }
+  memory: { request: "300Mi", limit: "1Gi" }

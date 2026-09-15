@@ -1,0 +1,21 @@
+// Single source of truth for the JAVA_TOOL_OPTIONS merge semantics.
+//
+// Given an existing JAVA_TOOL_OPTIONS value (__JVAL__) and the agent argument
+// to inject (__ARG__), produce the merged value:
+//   - empty/unset existing value      -> just the agent arg
+//   - agent arg already present        -> leave the value untouched (idempotent)
+//   - any other existing value         -> append the agent arg, space-separated
+//
+// This file is consumed two ways and MUST stay valid standalone CEL:
+//   - Helm injects it into the MutatingAdmissionPolicy (templates/10_java_inject_policy.yaml)
+//     after substituting __JVAL__ and __ARG__ with the in-policy expressions.
+//   - charts/zouz-operator-chart/tests evaluates it verbatim with cel-go, binding
+//     __JVAL__ and __ARG__ as string variables, to test every kind of env value.
+//
+// Keep it to standard CEL string operations only (no Object{}/JSONPatch{} k8s
+// extensions) so the test harness can evaluate it without an apiserver.
+//
+// The webhook backend (Kubernetes < 1.36) reimplements these exact semantics in
+// Go as injectwebhook.MergeJavaToolOptions; both are pinned to the same case
+// table (injectwebhook/jto_test.go), so keep them in sync.
+__JVAL__ == "" ? __ARG__ : (__JVAL__.contains(__ARG__) ? __JVAL__ : __JVAL__ + " " + __ARG__)

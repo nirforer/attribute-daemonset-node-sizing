@@ -1,0 +1,174 @@
+{{- if eq .Values.enable_sensors true -}}
+{{- if and (eq .Values.daemonset.enabled true) (eq .Values.daemonset.karpenter true) -}}
+{{- $root := . -}}
+{{- $extralabels := include "zouz-operator-chart.labels" . -}}
+{{- $selectorlabels := include "zouz-operator-chart.selectorLabels" . -}}
+{{- $sensorimage := include "zouz-operator-chart.sensorImage" . -}}
+{{- range $key, $value := .Values.daemonset.karpconfig }}
+{{- $cmpexp := "NotIn" -}}
+{{- $cpulist := $root.Values.daemonset.karpconfig.default.cpus | toStrings -}}
+{{- $cpureq := $root.Values.sensorresources.cpu.request -}}
+{{- $cpulim := $root.Values.sensorresources.cpu.limit -}}
+{{- $memreq := default $root.Values.sensorresources.memory.request $value.mem_request -}}
+{{- $memlim := default $root.Values.sensorresources.memory.limit $value.mem_limit -}}
+{{- if ne $key "default" -}}
+{{- $cmpexp = "In" -}}
+{{- $cpulist = $value.cpu | toString | list -}}
+{{- $cpureq = default $root.Values.sensorresources.cpu.request $value.request -}}
+{{- $cpulim = $value.limit -}}
+{{- end -}}
+
+{{- $exporturl := $root.Values.export_url -}}
+{{- if eq $root.Values.otelproxy.enabled true -}}
+{{- $exporturl = printf "%s-collector.%s.svc.cluster.local:4317" $root.Release.Name $root.Release.Namespace -}}
+{{- end -}}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: "{{ $root.Release.Name }}-{{ $key }}"
+  namespace: {{ $root.Release.Namespace }}
+  labels:
+    app: "{{ $root.Release.Name }}-{{ $key }}"
+    karpdskey: {{ $key }}
+    {{- $extralabels | nindent 4 }}
+spec:
+  selector: 
+    matchLabels:
+      karpdskey: {{ $key }}
+      {{- $selectorlabels | nindent 6 }}
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: {{ $root.Values.rollout_max_unavailable }}
+  template:
+    metadata:
+      labels:
+        karpdskey: {{ $key }}
+        app: "{{ $root.Release.Name }}-{{ $key }}"
+        attrb.io/inventory-client: "true"
+        {{- $extralabels | nindent 8 }}
+    spec:
+      tolerations: 
+      - operator: Exists
+      serviceAccountName: "{{ include "zouz-operator-chart.sensorServiceAccountName" $root }}"
+      {{- if $root.Values.priorityclass.existingName }}
+      priorityClassName: {{ $root.Values.priorityclass.existingName }}
+      {{- else if $root.Values.priorityclass.enabled }}
+      priorityClassName: {{ include "zouz-operator-chart.sensorPriorityClassName" $root }}
+      {{- end }}
+      hostPID: true
+      hostNetwork: {{ $root.Values.sensorHostNetwork }}
+      dnsPolicy: {{ $root.Values.sensorDNSPolicy }}
+      volumes:
+      {{- include "zouz-operator-chart.sensorVolumes" $root | nindent 6 }}
+      containers:
+      - name: "{{ $root.Release.Name }}-{{ $key }}"
+        image: "{{ $sensorimage }}"
+        imagePullPolicy: IfNotPresent
+        command: [ "/app/zprobe" ]
+        args:
+        - "-rootfs=/hostfs"
+        - "-procfs={{ include "zouz-operator-chart.sensorProcfsPath" $root }}"
+        - "-no-otel-collector"
+        - "-incluster"
+        {{- if and (eq $root.Values.token_is_secret false) (eq $root.Values.initconfig.enabled false) }}
+        - "-bearer-token={{ $root.Values.token }}"
+        {{- end }}
+        - "-oteladdr={{ $exporturl }}"
+        env:
+        - name: DISABLE_UTILIZATION_METRICS
+          value: "TRUE"
+        - name: K8S_CURRENT_NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: MEMORY_LIMIT_BYTES
+          valueFrom:
+            resourceFieldRef:
+              resource: limits.memory
+              divisor: "1"
+        - name: USE_APP_TAGS
+          value: "{{ $root.Values.use_app_name_label }}"
+        - name: CONFIG_ENDPOINT
+          value: "{{ $root.Values.config_endpoint }}"
+        {{- if $root.Values.sensorDisableAutoJavaInstrumentation }}
+        - name: JAVA_INSTRUMENTATION_DISABLED
+          value: "TRUE"
+        {{- end }}
+        {{- if ($root.Values.featureFlags | default dict).url }}
+        {{- include "zouz-operator-chart.featureFlagsEnv" $root | nindent 8 }}
+        {{- end }}
+        {{- if eq $root.Values.initconfig.enabled true }}
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ $root.Values.initconfig.secretName | quote }}
+              key: token
+        {{- else if eq $root.Values.token_is_secret true }}
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ $root.Values.token }}
+              key: {{ $root.Values.token }}
+        {{- end }}
+        {{- if eq $root.Values.initconfig.enabled false }}
+        - name: CLUSTER_NAME
+          value: {{ $root.Values.cluster_name | quote }}
+        {{- else }}
+        - name: CLUSTER_NAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ $root.Values.initconfig.secretName | quote }}
+              key: clustername
+        {{- end }}
+        {{- if eq $root.Values.clusterinventory.enabled true }}
+        - name: IVP_SERVER_ADDRESS
+          value: "attrb-cluster-inventory.{{ $root.Release.Namespace }}.svc.cluster.local:9191"
+        {{- end }}
+        {{- with $root.Values.extraEnv }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        resources:
+          requests:
+            memory: {{ $memreq }}
+            cpu: {{ $cpureq }}
+          limits:
+            {{if $memlim }}
+            memory: {{ $memlim }}
+            {{end}}
+            {{if $cpulim }}
+            cpu: {{ $cpulim }}
+            {{end}}
+        securityContext:
+          {{- include "zouz-operator-chart.sensorSecurityContext" $root | nindent 10 }}
+        volumeMounts:
+          {{- include "zouz-operator-chart.sensorVolumeMounts" $root | nindent 10 }}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/os
+                operator: In
+                values:
+                - linux
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                - amd64
+                - arm64
+              - key: eks.amazonaws.com/compute-type
+                operator: NotIn
+                values:
+                - fargate
+              - key: karpenter.k8s.aws/instance-cpu
+                operator: {{ $cmpexp }}
+                values:
+                {{- range $cpulist }}
+                - {{ . | quote }}
+                {{- end }}
+---
+{{- end -}}
+{{- end -}}
+{{- end -}}

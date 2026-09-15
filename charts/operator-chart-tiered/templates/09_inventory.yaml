@@ -1,0 +1,136 @@
+{{- if eq .Values.clusterinventory.enabled true -}}
+---
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: "{{ include "zouz-operator-chart.nsPrefix" . }}-attrb-cluster-inventory"
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "zouz-operator-chart.labels" . | nindent 4 }}
+automountServiceAccountToken: true
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: "{{ include "zouz-operator-chart.clusterPrefix" . }}-attrb-object-lister"
+  labels:
+    {{- include "zouz-operator-chart.labels" . | nindent 4 }}
+rules:
+{{- include "zouz-operator-chart.objectListRules" . }}
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: "{{ include "zouz-operator-chart.clusterPrefix" . }}-attrb-cluster-inventory-object-lister"
+  labels:
+    {{- include "zouz-operator-chart.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: "{{ include "zouz-operator-chart.clusterPrefix" . }}-attrb-object-lister"
+subjects:
+- kind: ServiceAccount
+  name: "{{ include "zouz-operator-chart.nsPrefix" . }}-attrb-cluster-inventory"
+  namespace: {{ .Release.Namespace }}
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: "attrb-cluster-inventory"
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "zouz-operator-chart.labels" . | nindent 4 }}
+    app: "attrb-cluster-inventory"
+spec:
+  replicas: {{ .Values.clusterinventory.replicas }}
+  selector:
+    matchLabels:
+      {{- include "zouz-operator-chart.selectorLabels" . | nindent 6 }}
+      app: "attrb-cluster-inventory"
+  template:
+    metadata:
+      labels:
+        {{- include "zouz-operator-chart.labels" . | nindent 8 }}
+        app: "attrb-cluster-inventory"
+    spec:
+      tolerations:
+      {{- if .Values.global.tolerations }}
+      {{- .Values.global.tolerations | toYaml | nindent 8 }}
+      {{- end }}
+      nodeSelector:
+      {{- if .Values.global.nodeSelector }}
+      {{- .Values.global.nodeSelector | toYaml | nindent 8 }}
+      {{- end }}
+      serviceAccountName: "{{ include "zouz-operator-chart.nsPrefix" . }}-attrb-cluster-inventory"
+      {{- with .Values.clusterinventory.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: "attrb-cluster-inventory"
+          image: {{ .Values.clusterinventory.image }}
+          imagePullPolicy: IfNotPresent
+          {{- with .Values.clusterinventory.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - containerPort: 9191
+          readinessProbe:
+            tcpSocket:
+              port: 9191
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 9191
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          env:
+            - name: "SERVER_ADDRESS"
+              value: "0.0.0.0:9191"
+            - name: "POD_REFRESH_INTERVAL"
+              value: "{{ .Values.clusterinventory.resync_time.pods }}"
+            - name: "OWNER_REFRESH_INTERVAL"
+              value: "{{ .Values.clusterinventory.resync_time.owners }}"
+            - name: GOMEMLIMIT
+              valueFrom:
+                resourceFieldRef:
+                  divisor: '0'
+                  resource: limits.memory
+            - name: GOMAXPROCS
+              valueFrom:
+                resourceFieldRef:
+                  divisor: '0'
+                  resource: limits.cpu
+          resources:
+            {{- toYaml .Values.clusterinventory.resources | nindent 12 }}
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: "attrb-cluster-inventory"
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "zouz-operator-chart.labels" . | nindent 4 }}
+    app: "attrb-cluster-inventory"
+spec:
+  selector:
+    {{- include "zouz-operator-chart.selectorLabels" . | nindent 4 }}
+    app: "attrb-cluster-inventory"
+  ports:
+  - port: 9191
+    targetPort: 9191
+  type: ClusterIP
+
+---
+{{- end -}}

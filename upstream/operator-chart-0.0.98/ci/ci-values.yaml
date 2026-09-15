@@ -1,0 +1,4 @@
+cluster_name: test
+token: test
+initconfig:
+  enabled: false

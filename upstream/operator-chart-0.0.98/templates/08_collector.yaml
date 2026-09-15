@@ -1,0 +1,181 @@
+{{- if and (eq .Values.otelproxy.enabled true) -}}
+{{- $limit_mem := .Values.otelproxy.resources.memory.limit_mib | quote  -}}
+{{- $limit_mem := trimAll "\"" $limit_mem  -}}
+{{- $limit_mem := printf "%sMi" $limit_mem -}}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: {{ $.Release.Namespace }}
+data:
+  cert.key: |
+    -----BEGIN PRIVATE KEY-----
+    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
+    sI4QqihS3iHVztLGcIu+lKXM+jy5b8zF2Nfg/AIP+8PO5lJmi2ULfmWHupfB8KnE
+    BI37dGqCYCjHnfTr6Cl2nNyp9yKqjj2kbyMTQxbW9dSaQ4eN6fo7MXqiaqoP+Ohj
+    Q+hbsHTEziILvflCpO2gJFks6vFcr2wpA1/QibsRAoIBAEH1SBbJIOteVnqOuf5h
+    Vg/jZfS3mrv3mzbm5bHOzGG/R/DmqI/ddkwggE+hGKqvWooMrJlliaPWYa7YTBSD
+    Eehm6Pbpj5rgyYdqQoWllQ77FtXzyTrLIdivGTLPIRX2Vl0c6FyKdx+dU0k9H+Nt
+    NTlXKwBTXB1TBdAE5SVnvA+NPF6SH+vRphccHWb9yuGbraPtZpGGVNNlgQZhU73P
+    lIFR5Ci37Wg7valoHoV54mXHGsowI5TrDSlu+FIktXdyIqWpXhfGN/aFepAcjTVY
+    8VlJpqLcA6kgLC/PT9SbqQGOdSEngSsTYasvryQPEkt046TF2IVX04dkiPqjg4aX
+    aoMCggEBAN+CrDbGxcBUWsMYS4fCEqqS2rC1gOPQD27YPDElUF4JVJMwvFHximfV
+    22tT6pBMMIp0K+hneeZbBXD8kb9suYwcENKn7bYk5gHFSv/Q8OgZk1LFkdtYUj2b
+    7vY1+HWl8+XJGs01u58MB+3lnF3Mlyakmhh60no2qTlSdA5w04vGPwCShkh0uBJh
+    mMMgqBwdriMeyt5cnLho1Z6bfGTVo1qj9ehSKQ/FL2bNc58Fva4z65cu6GQeiQUw
+    l1RVlAAVag0Ah81snnFv3r6RtBh4JRe00eRgDJve6mMQvrNIj1k6WmHuuDOzxlCW
+    tLQtkXKdayigz45aMGUAQc+h6Y5Zap0=
+    -----END PRIVATE KEY-----
+  cert.pem: |
+    -----BEGIN CERTIFICATE-----
+    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
+    -----END CERTIFICATE-----
+  config.yaml: {{ include "zouz-operator-chart.proxyConfig" . | toYaml | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: "{{ .Release.Name }}-collector"
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: "{{ .Release.Name }}-collector"
+spec:
+    replicas: {{ .Values.otelproxy.replicas }}
+    selector: 
+      matchLabels:
+        app: "{{ .Release.Name }}-collector"
+    template:
+      metadata:
+        labels:
+          app: "{{ .Release.Name }}-collector"
+      spec:
+        {{- if .Values.otelproxy.tolerations }}
+        tolerations:
+        {{- toYaml .Values.otelproxy.tolerations | nindent 8 }}
+        {{- end }}
+        {{- if .Values.otelproxy.nodeSelector }}
+        nodeSelector:
+          {{- toYaml .Values.otelproxy.nodeSelector | nindent 10 }}
+        {{- end }}
+        containers:
+        - name: "collector"
+          image: {{ .Values.otelproxy.image }}
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: {{ .Values.otelproxy.resources.cpu.request }}
+              memory: {{ .Values.otelproxy.resources.memory.request }}
+            limits:
+              cpu: {{ .Values.otelproxy.resources.cpu.limit }}
+              memory: {{ $limit_mem }}
+          env:
+            - name: MY_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            {{- if eq .Values.initconfig.enabled true }}
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.initconfig.secretName | quote }}
+                  key: token
+            {{- else if eq .Values.token_is_secret true }}
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.token }}
+                  key: {{ .Values.token }}
+            {{- else if eq .Values.token_is_secret false -}}
+            - name: API_KEY
+              value: {{ .Values.token }}
+            {{- end }}
+          ports:
+            - containerPort: 4317
+              protocol: TCP
+          volumeMounts:
+            - name: otel-collector-config
+              mountPath: /etc/otelcol
+        volumes:
+          - name: otel-collector-config
+            configMap:
+              name: otel-collector-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: "{{ .Release.Name }}-collector"
+  namespace: {{ .Release.Namespace }}
+spec:
+  ports:
+    - port: 4317
+      targetPort: 4317
+      protocol: TCP
+  selector:
+    app: "{{ .Release.Name }}-collector"
+  type: ClusterIP
+---
+{{- end -}}

@@ -1,0 +1,507 @@
+diff --color -ruN upstream/operator-chart-0.0.98/RELEASE_NOTES.md charts/operator-chart-tiered/RELEASE_NOTES.md
+--- upstream/operator-chart-0.0.98/RELEASE_NOTES.md	2026-09-15 11:46:36
++++ charts/operator-chart-tiered/RELEASE_NOTES.md	2026-09-15 13:17:52
+@@ -9,6 +9,21 @@
+ 
+ ---
+ 
++## Version 0.0.99 (proposed)
++**Release Date:** unreleased
++
++### 🔗 Related Versions
++
++- **Chart Version Bump:** 0.0.98 → 0.0.99 (pending)
++
++### 📐 Tiered sensor DaemonSets (DaemonSet mode)
++
++| Service | New Version | Key Updates |
++|---------|-------------|-------------|
++| **Chart** | `0.0.99` | • New `daemonset.tiers` / `daemonset.tierLabelKey`: in DaemonSet mode (`daemonset.enabled=true`, `daemonset.karpenter=false`) the sensor DaemonSet can be split into tiers, each pinned to a set of node-label values (`<key> In [...]`) with its own `resources` and optional `tolerations`, plus the catch-all DaemonSet (`<key> NotIn [...]`) that keeps the release name and selector so enabling tiers is a rolling update, not a recreate. A label value listed in two tiers, a tier named `default`, or a cpu/memory block without a request fails the render. <br/> • With `tiers` empty the render is byte-identical to 0.0.98; Karpenter and operator modes are unchanged. <br/> • Guidance: key tiers on a label set on the NodePool (`spec.template.metadata.labels`) or on `karpenter.sh/nodepool`. Instance-size labels (`karpenter.k8s.aws/instance-cpu`, `node.kubernetes.io/instance-type`) are only safe on Karpenter >= 1.14.0: older Karpenter counts every tier's DaemonSet against every new node (kubernetes-sigs/karpenter#715, fixed by #2486). The existing `karpconfig` mode is affected by the same bug on Karpenter < 1.14. |
++
++---
++
+ ## Version 0.0.98
+ **Release Date:** September 8, 2026
+ 
+diff --color -ruN upstream/operator-chart-0.0.98/templates/05_daemonset.yaml charts/operator-chart-tiered/templates/05_daemonset.yaml
+--- upstream/operator-chart-0.0.98/templates/05_daemonset.yaml	2026-09-15 11:46:36
++++ charts/operator-chart-tiered/templates/05_daemonset.yaml	2026-09-15 13:14:44
+@@ -1,157 +1,86 @@
+ {{- if eq .Values.enable_sensors true -}}
+ {{- if and (eq .Values.daemonset.enabled true) (eq .Values.daemonset.karpenter false) -}}
++{{- $root := . -}}
+ 
+ {{- $exporturl := .Values.export_url -}}
+ {{- if eq .Values.otelproxy.enabled true -}}
+ {{- $exporturl = printf "%s-collector.%s.svc.cluster.local:4317" .Release.Name .Release.Namespace -}}
+ {{- end -}}
+ 
+-apiVersion: apps/v1
+-kind: DaemonSet
+-metadata:
+-  name: {{ .Release.Name }}
+-  namespace: {{ .Release.Namespace }}
+-  labels:
+-    app: {{ .Release.Name }}
+-    {{- include "zouz-operator-chart.labels" . | nindent 4 }}
+-spec:
+-  selector: 
+-    matchLabels:
+-      {{- include "zouz-operator-chart.selectorLabels" . | nindent 6 }}
+-  updateStrategy:
+-    type: RollingUpdate
+-    rollingUpdate:
+-      maxUnavailable: {{ .Values.rollout_max_unavailable }}
+-  template:
+-    metadata:
+-      labels:
+-        app: {{ .Release.Name }}
+-        attrb.io/inventory-client: "true"
+-        {{- include "zouz-operator-chart.labels" . | nindent 8 }}
+-    spec:
+-      tolerations: 
+-      {{- if .Values.daemonset.selectors.tolerations }}
+-      {{- .Values.daemonset.selectors.tolerations | toYaml | nindent 8 }}
+-      {{- end }}
+-      nodeSelector:
+-      {{- if .Values.daemonset.selectors.nodeSelector }}
+-      {{- .Values.daemonset.selectors.nodeSelector | toYaml | nindent 8 }}
+-      {{- end }}
+-      affinity:
+-        nodeAffinity:
+-          requiredDuringSchedulingIgnoredDuringExecution:
+-            nodeSelectorTerms:
+-            - matchExpressions:
+-              - key: kubernetes.io/os
+-                operator: In
+-                values:
+-                - linux
+-            - matchExpressions:
+-              - key: kubernetes.io/arch
+-                operator: In
+-                values:
+-                - amd64
+-                - arm64
++{{- /*
++Tiers: validate, and collect the label values each tier claims so the catch-all
++can exclude them. A node must match at most one tier, otherwise two sensors
++would run on it, so the same key=value may not appear in two tiers.
++*/ -}}
++{{- $tiers := .Values.daemonset.tiers | default dict -}}
++{{- if ne (kindOf $tiers) "map" -}}
++{{- fail "daemonset.tiers must be a map of <tierName>: {values: [...], resources: {...}}" -}}
++{{- end -}}
++{{- $claimed := dict -}}
++{{- $byKey := dict -}}
++{{- range $name, $t := $tiers -}}
++  {{- if eq $name "default" -}}
++  {{- fail "daemonset.tiers: \"default\" is reserved for the catch-all DaemonSet" -}}
++  {{- end -}}
++  {{- if not (regexMatch "^[a-z0-9]([-a-z0-9]{0,30}[a-z0-9])?$" $name) -}}
++  {{- fail (printf "daemonset.tiers: tier name %q must be a short DNS-1123 label (lowercase letters, digits, hyphens)" $name) -}}
++  {{- end -}}
++  {{- $key := $t.key | default $root.Values.daemonset.tierLabelKey -}}
++  {{- if not $key -}}
++  {{- fail (printf "daemonset.tiers.%s: no label key; set daemonset.tierLabelKey or tiers.%s.key" $name $name) -}}
++  {{- end -}}
++  {{- if not $t.values -}}
++  {{- fail (printf "daemonset.tiers.%s: values must list at least one label value" $name) -}}
++  {{- end -}}
++  {{- range $v := ($t.values | toStrings) -}}
++    {{- $id := printf "%s=%s" $key $v -}}
++    {{- if hasKey $claimed $id -}}
++    {{- fail (printf "daemonset.tiers: node label %s is claimed by tiers %q and %q; a node may match only one tier" $id (get $claimed $id) $name) -}}
++    {{- end -}}
++    {{- $_ := set $claimed $id $name -}}
++    {{- $_ := set $byKey $key (append (get $byKey $key | default list) $v) -}}
++  {{- end -}}
++{{- end -}}
+ 
+-      serviceAccountName: "{{ include "zouz-operator-chart.sensorServiceAccountName" . }}"
++{{- /* Catch-all (or the plain single DaemonSet when no tiers are configured). */ -}}
++{{- $defaultExprs := list -}}
++{{- range $key, $vals := $byKey -}}
++{{- $defaultExprs = append $defaultExprs (dict "key" $key "operator" "NotIn" "values" $vals) -}}
++{{- end -}}
++{{ include "zouz-operator-chart.sensorDaemonSet" (dict
++      "root" $root
++      "name" .Release.Name
++      "tier" (ternary "default" "" (gt (len $tiers) 0))
++      "exprs" $defaultExprs
++      "res" .Values.sensorresources
++      "tolerations" .Values.daemonset.selectors.tolerations
++      "exporturl" $exporturl) }}
+ 
+-      {{- if .Values.priorityclass.existingName }}
+-      priorityClassName: {{ .Values.priorityclass.existingName }}
+-      {{- else if .Values.priorityclass.enabled }}
+-      priorityClassName: {{ include "zouz-operator-chart.sensorPriorityClassName" . }}
+-      {{- end }}
+-
+-      hostPID: true
+-      hostNetwork: {{ .Values.sensorHostNetwork }}
+-      dnsPolicy: {{ .Values.sensorDNSPolicy }}
+-      volumes:
+-      {{- include "zouz-operator-chart.sensorVolumes" . | nindent 6 }}
+-
+-      containers:
+-      - name: zprobe
+-        image: "{{ include "zouz-operator-chart.sensorImage" . }}"
+-        imagePullPolicy: IfNotPresent
+-
+-        command: [ "/app/zprobe" ]
+-        args:
+-        - "-rootfs=/hostfs"
+-        - "-procfs={{ include "zouz-operator-chart.sensorProcfsPath" . }}"
+-        - "-no-otel-collector"
+-        - "-incluster"
+-        {{- if and (eq .Values.token_is_secret false) (eq .Values.initconfig.enabled false) }}
+-        - "-bearer-token={{ .Values.token }}"
+-        {{- end }}
+-        - "-oteladdr={{ $exporturl }}"
+-
+-        env:
+-        - name: DISABLE_UTILIZATION_METRICS
+-          value: "TRUE"
+-        - name: K8S_CURRENT_NODE_NAME
+-          valueFrom:
+-            fieldRef:
+-              fieldPath: spec.nodeName
+-        - name: MEMORY_LIMIT_BYTES
+-          valueFrom:
+-            resourceFieldRef:
+-              resource: limits.memory
+-              divisor: "1"
+-        - name: USE_APP_TAGS
+-          value: "{{ .Values.use_app_name_label }}"
+-        - name: CONFIG_ENDPOINT
+-          value: "{{ .Values.config_endpoint }}"
+-        {{- if .Values.sensorDisableAutoJavaInstrumentation }}
+-        - name: JAVA_INSTRUMENTATION_DISABLED
+-          value: "TRUE"
+-        {{- end }}
+-        {{- if (.Values.featureFlags | default dict).url }}
+-        {{- include "zouz-operator-chart.featureFlagsEnv" . | nindent 8 }}
+-        {{- end }}
+-        {{- if eq .Values.initconfig.enabled true }}
+-        - name: API_KEY
+-          valueFrom:
+-            secretKeyRef:
+-              name: {{ .Values.initconfig.secretName | quote }}
+-              key: token
+-        {{- else if eq .Values.token_is_secret true }}
+-        - name: API_KEY
+-          valueFrom:
+-            secretKeyRef:
+-              name: {{ .Values.token }}
+-              key: {{ .Values.token }}
+-        {{- end }}
+-        {{- if eq .Values.initconfig.enabled false }}
+-        - name: CLUSTER_NAME
+-          value: {{ .Values.cluster_name | quote }}
+-        {{- else }}
+-        - name: CLUSTER_NAME
+-          valueFrom:
+-            secretKeyRef:
+-              name: {{ .Values.initconfig.secretName | quote }}
+-              key: clustername
+-        {{- end }}
+-        {{- if eq .Values.clusterinventory.enabled true }}
+-        - name: IVP_SERVER_ADDRESS
+-          value: "attrb-cluster-inventory.{{ .Release.Namespace }}.svc.cluster.local:9191"
+-        {{- end }}
+-        {{- with .Values.extraEnv }}
+-        {{- toYaml . | nindent 8 }}
+-        {{- end }}
+-
+-        resources:
+-          requests:
+-            memory: {{ .Values.sensorresources.memory.request }}
+-            cpu: {{ .Values.sensorresources.cpu.request }}
+-          limits:
+-            {{if .Values.sensorresources.memory.limit }}
+-            memory: {{ .Values.sensorresources.memory.limit }}
+-            {{end}}
+-            {{if .Values.sensorresources.cpu.limit }}
+-            cpu: {{ .Values.sensorresources.cpu.limit }}
+-            {{end}}
+-
+-        securityContext:
+-          {{- include "zouz-operator-chart.sensorSecurityContext" . | nindent 10 }}
+-        volumeMounts:
+-          {{- include "zouz-operator-chart.sensorVolumeMounts" . | nindent 10 }}
++{{- /* One DaemonSet per tier. */ -}}
++{{- range $name, $t := $tiers }}
++{{- $key := $t.key | default $root.Values.daemonset.tierLabelKey -}}
++{{- /*
++A tier's cpu / memory block replaces the matching sensorresources block as a
++whole (request and limit together); a block the tier does not set is inherited.
++Inheriting field by field would let a tier raise a request above an inherited
++limit, which the API server rejects.
++*/ -}}
++{{- $tr := $t.resources | default dict -}}
++{{- $cpu := $tr.cpu | default $root.Values.sensorresources.cpu -}}
++{{- $mem := $tr.memory | default $root.Values.sensorresources.memory -}}
++{{- if not $cpu.request -}}{{- fail (printf "daemonset.tiers.%s.resources.cpu.request is required when cpu is set" $name) -}}{{- end -}}
++{{- if not $mem.request -}}{{- fail (printf "daemonset.tiers.%s.resources.memory.request is required when memory is set" $name) -}}{{- end -}}
++{{- $res := dict "cpu" $cpu "memory" $mem }}
++{{- /* the newline before the separator is deliberate: the previous document ends without one */}}
++---
++{{ include "zouz-operator-chart.sensorDaemonSet" (dict
++      "root" $root
++      "name" (printf "%s-%s" $root.Release.Name $name)
++      "tier" $name
++      "exprs" (list (dict "key" $key "operator" "In" "values" ($t.values | toStrings)))
++      "res" $res
++      "tolerations" ($t.tolerations | default $root.Values.daemonset.selectors.tolerations)
++      "exporturl" $exporturl) }}
++{{- end }}
+ {{ end }}
+-{{ end }}
+\ No newline at end of file
++{{ end }}
+diff --color -ruN upstream/operator-chart-0.0.98/templates/_sensor_daemonset.tpl charts/operator-chart-tiered/templates/_sensor_daemonset.tpl
+--- upstream/operator-chart-0.0.98/templates/_sensor_daemonset.tpl	1970-01-01 02:00:00
++++ charts/operator-chart-tiered/templates/_sensor_daemonset.tpl	2026-09-15 13:08:29
+@@ -0,0 +1,197 @@
++{{/*
++Renders one sensor DaemonSet for the non-Karpenter DaemonSet mode. Called with:
++  root        chart root context
++  name        DaemonSet name (the release name for the catch-all, <release>-<tier> for a tier)
++  tier        tier name, or "" for the plain single DaemonSet (no tiers configured)
++  exprs       extra nodeAffinity matchExpressions (tier In [...] / catch-all NotIn [...]); empty = legacy affinity
++  res         resources in the sensorresources shape: cpu.request/limit, memory.request/limit
++  tolerations tolerations list (may be empty)
++  exporturl   OTEL export address
++
++Selector note: tier DaemonSets add attrb.io/sensor-tier to their selector. The
++catch-all keeps the historical name and selector so enabling tiers on a live
++install is a rolling update of the existing DaemonSet rather than a delete and
++recreate of every sensor pod. Its selector therefore also matches tier pods;
++that is safe because the DaemonSet controller only manages pods whose
++ownerReference points at it, and the NotIn affinity keeps it off tier nodes.
++*/}}
++{{- define "zouz-operator-chart.sensorDaemonSet" -}}
++{{- $r := .root -}}
++apiVersion: apps/v1
++kind: DaemonSet
++metadata:
++  name: {{ .name }}
++  namespace: {{ $r.Release.Namespace }}
++  labels:
++    app: {{ $r.Release.Name }}
++    {{- include "zouz-operator-chart.labels" $r | nindent 4 }}
++    {{- if .tier }}
++    attrb.io/sensor-tier: {{ .tier | quote }}
++    {{- end }}
++spec:
++  selector: 
++    matchLabels:
++      {{- include "zouz-operator-chart.selectorLabels" $r | nindent 6 }}
++      {{- if and .tier (ne .tier "default") }}
++      attrb.io/sensor-tier: {{ .tier | quote }}
++      {{- end }}
++  updateStrategy:
++    type: RollingUpdate
++    rollingUpdate:
++      maxUnavailable: {{ $r.Values.rollout_max_unavailable }}
++  template:
++    metadata:
++      labels:
++        app: {{ $r.Release.Name }}
++        attrb.io/inventory-client: "true"
++        {{- include "zouz-operator-chart.labels" $r | nindent 8 }}
++        {{- if .tier }}
++        attrb.io/sensor-tier: {{ .tier | quote }}
++        {{- end }}
++    spec:
++      tolerations: 
++      {{- if .tolerations }}
++      {{- .tolerations | toYaml | nindent 8 }}
++      {{- end }}
++      nodeSelector:
++      {{- if $r.Values.daemonset.selectors.nodeSelector }}
++      {{- $r.Values.daemonset.selectors.nodeSelector | toYaml | nindent 8 }}
++      {{- end }}
++      affinity:
++        nodeAffinity:
++          requiredDuringSchedulingIgnoredDuringExecution:
++            nodeSelectorTerms:
++            {{- if .exprs }}
++            - matchExpressions:
++              - key: kubernetes.io/os
++                operator: In
++                values:
++                - linux
++              - key: kubernetes.io/arch
++                operator: In
++                values:
++                - amd64
++                - arm64
++              {{- range .exprs }}
++              - key: {{ .key }}
++                operator: {{ .operator }}
++                values:
++                {{- range .values }}
++                - {{ . | quote }}
++                {{- end }}
++              {{- end }}
++            {{- else }}
++            - matchExpressions:
++              - key: kubernetes.io/os
++                operator: In
++                values:
++                - linux
++            - matchExpressions:
++              - key: kubernetes.io/arch
++                operator: In
++                values:
++                - amd64
++                - arm64
++            {{- end }}
++
++      serviceAccountName: "{{ include "zouz-operator-chart.sensorServiceAccountName" $r }}"
++
++      {{- if $r.Values.priorityclass.existingName }}
++      priorityClassName: {{ $r.Values.priorityclass.existingName }}
++      {{- else if $r.Values.priorityclass.enabled }}
++      priorityClassName: {{ include "zouz-operator-chart.sensorPriorityClassName" $r }}
++      {{- end }}
++
++      hostPID: true
++      hostNetwork: {{ $r.Values.sensorHostNetwork }}
++      dnsPolicy: {{ $r.Values.sensorDNSPolicy }}
++      volumes:
++      {{- include "zouz-operator-chart.sensorVolumes" $r | nindent 6 }}
++
++      containers:
++      - name: zprobe
++        image: "{{ include "zouz-operator-chart.sensorImage" $r }}"
++        imagePullPolicy: IfNotPresent
++
++        command: [ "/app/zprobe" ]
++        args:
++        - "-rootfs=/hostfs"
++        - "-procfs={{ include "zouz-operator-chart.sensorProcfsPath" $r }}"
++        - "-no-otel-collector"
++        - "-incluster"
++        {{- if and (eq $r.Values.token_is_secret false) (eq $r.Values.initconfig.enabled false) }}
++        - "-bearer-token={{ $r.Values.token }}"
++        {{- end }}
++        - "-oteladdr={{ .exporturl }}"
++
++        env:
++        - name: DISABLE_UTILIZATION_METRICS
++          value: "TRUE"
++        - name: K8S_CURRENT_NODE_NAME
++          valueFrom:
++            fieldRef:
++              fieldPath: spec.nodeName
++        - name: MEMORY_LIMIT_BYTES
++          valueFrom:
++            resourceFieldRef:
++              resource: limits.memory
++              divisor: "1"
++        - name: USE_APP_TAGS
++          value: "{{ $r.Values.use_app_name_label }}"
++        - name: CONFIG_ENDPOINT
++          value: "{{ $r.Values.config_endpoint }}"
++        {{- if $r.Values.sensorDisableAutoJavaInstrumentation }}
++        - name: JAVA_INSTRUMENTATION_DISABLED
++          value: "TRUE"
++        {{- end }}
++        {{- if ($r.Values.featureFlags | default dict).url }}
++        {{- include "zouz-operator-chart.featureFlagsEnv" $r | nindent 8 }}
++        {{- end }}
++        {{- if eq $r.Values.initconfig.enabled true }}
++        - name: API_KEY
++          valueFrom:
++            secretKeyRef:
++              name: {{ $r.Values.initconfig.secretName | quote }}
++              key: token
++        {{- else if eq $r.Values.token_is_secret true }}
++        - name: API_KEY
++          valueFrom:
++            secretKeyRef:
++              name: {{ $r.Values.token }}
++              key: {{ $r.Values.token }}
++        {{- end }}
++        {{- if eq $r.Values.initconfig.enabled false }}
++        - name: CLUSTER_NAME
++          value: {{ $r.Values.cluster_name | quote }}
++        {{- else }}
++        - name: CLUSTER_NAME
++          valueFrom:
++            secretKeyRef:
++              name: {{ $r.Values.initconfig.secretName | quote }}
++              key: clustername
++        {{- end }}
++        {{- if eq $r.Values.clusterinventory.enabled true }}
++        - name: IVP_SERVER_ADDRESS
++          value: "attrb-cluster-inventory.{{ $r.Release.Namespace }}.svc.cluster.local:9191"
++        {{- end }}
++        {{- with $r.Values.extraEnv }}
++        {{- toYaml . | nindent 8 }}
++        {{- end }}
++
++        resources:
++          requests:
++            memory: {{ .res.memory.request }}
++            cpu: {{ .res.cpu.request }}
++          limits:
++            {{if .res.memory.limit }}
++            memory: {{ .res.memory.limit }}
++            {{end}}
++            {{if .res.cpu.limit }}
++            cpu: {{ .res.cpu.limit }}
++            {{end}}
++
++        securityContext:
++          {{- include "zouz-operator-chart.sensorSecurityContext" $r | nindent 10 }}
++        volumeMounts:
++          {{- include "zouz-operator-chart.sensorVolumeMounts" $r | nindent 10 }}
++{{- end -}}
+diff --color -ruN upstream/operator-chart-0.0.98/values.yaml charts/operator-chart-tiered/values.yaml
+--- upstream/operator-chart-0.0.98/values.yaml	2026-09-15 11:46:36
++++ charts/operator-chart-tiered/values.yaml	2026-09-15 13:14:44
+@@ -545,6 +545,40 @@
+       limit: "9600m"
+       mem_request: "4Gi"
+       mem_limit: "19Gi"
++  # Tiered mode: split the (non-Karpenter) sensor DaemonSet into a few
++  # DaemonSets, each pinned to a set of node-label values and carrying its own
++  # sensor resources, plus a catch-all for every other node. Applies when
++  # daemonset.enabled=true and daemonset.karpenter=false; an empty `tiers`
++  # renders exactly the single DaemonSet as before.
++  #
++  # Choose the label deliberately when nodes are provisioned by Karpenter:
++  #   - A label you set yourself on the NodePool (spec.template.metadata.labels),
++  #     e.g. attrb.io/sensor-size=large, or karpenter.sh/nodepool with NodePool
++  #     names as values. Karpenter treats these as part of the NodePool, so it
++  #     charges exactly one sensor DaemonSet to each new node.
++  #   - Instance-size labels (karpenter.k8s.aws/instance-cpu,
++  #     node.kubernetes.io/instance-type, ...) are only safe on Karpenter
++  #     >= 1.14.0. Older Karpenter cannot resolve them while planning a node
++  #     and counts every tier's DaemonSet against every new node
++  #     (kubernetes-sigs/karpenter#715, fixed by #2486 in v1.14.0).
++  # Each node must match at most one tier; a label value listed in two tiers
++  # fails the render. The catch-all uses NotIn over all listed values, so it
++  # also covers nodes without the label.
++  tierLabelKey: attrb.io/sensor-size
++  tiers: {}
++  # tiers:
++  #   large:
++  #     values: ["large", "xlarge"]      # values of tierLabelKey (or of `key`) that select this tier
++  #     # key: karpenter.sh/nodepool     # optional per-tier label key override
++  #     resources:                       # same shape as sensorresources. A cpu or memory block you set here
++  #       cpu:                           # replaces the sensorresources block as a whole (request and limit);
++  #         request: "300m"              # a block you leave out is inherited from sensorresources.
++  #         limit: "1500m"
++  #       memory:
++  #         request: "640Mi"
++  #         limit: "3Gi"
++  #     # tolerations:                   # optional, replaces daemonset.selectors.tolerations for this tier
++  #     #   - operator: Exists
+ extraEnv: []
+ extraLabels: {}
+ global:

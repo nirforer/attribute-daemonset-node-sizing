@@ -1,0 +1,9 @@
+apiVersion: v2
+name: node-sized-agent
+description: >-
+  Demo chart: a DaemonSet agent whose CPU/memory requests and limits are sized
+  per node-size tier. One DaemonSet is rendered per tier, pinned to matching
+  nodes via node affinity, plus a catch-all DaemonSet for unlisted node types.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

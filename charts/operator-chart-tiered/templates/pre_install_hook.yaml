@@ -1,0 +1,197 @@
+{{- if .Values.initconfig.enabled -}}
+{{- if .Values.initconfig.create_secret -}}
+{{- $token := .Values.token | required "token is required [org token]" -}}
+{{- if eq .Values.initconfig.secretName .Values.initconfig.orgToken.secretName -}}
+{{- fail "initconfig.secretName and initconfig.orgToken.secretName must not be the same" -}}
+{{- end -}}
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+    name: {{ .Values.initconfig.orgToken.secretName | quote }}
+    namespace: {{ .Release.Namespace }}
+    annotations:
+        "helm.sh/hook": pre-install
+        "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+        "helm.sh/hook-weight": "5"
+data:
+    {{ .Values.initconfig.orgToken.secretKey }}: {{ .Values.token | b64enc | quote }}
+
+{{- end }}
+
+---
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "zouz-operator-chart.nsPrefix" . }}-attrb-pre-install-hook
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "0"
+automountServiceAccountToken: true
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "zouz-operator-chart.clusterPrefix" . }}-attrb-pre-install-hook-role
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "1"
+rules:
+- apiGroups: ["*"]
+  resources: ["daemonsets"]
+  verbs: ["get"]
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "zouz-operator-chart.clusterPrefix" . }}-attrb-pre-install-hook-role-binding
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "2"
+subjects:
+- kind: ServiceAccount
+  name: {{ include "zouz-operator-chart.nsPrefix" . }}-attrb-pre-install-hook
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: {{ include "zouz-operator-chart.clusterPrefix" . }}-attrb-pre-install-hook-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "zouz-operator-chart.nsPrefix" . }}-attrb-pre-install-hook-secret-setter
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "3"
+rules:
+- apiGroups: ["*"]
+  resources: ["secrets"]
+  verbs: ["create", "get", "update", "delete"]
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "zouz-operator-chart.nsPrefix" . }}-attrb-pre-install-hook-secret-setter
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "4"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "zouz-operator-chart.nsPrefix" . }}-attrb-pre-install-hook-secret-setter
+subjects:
+- kind: ServiceAccount
+  name: {{ include "zouz-operator-chart.nsPrefix" . }}-attrb-pre-install-hook
+  namespace: {{ .Release.Namespace }}
+
+---
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "attrb-pre-install-hook"
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "zouz-operator-chart.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "6"
+spec:
+  template:
+    metadata:
+      name: "attrb-pre-install-hook"
+      labels:
+        {{- include "zouz-operator-chart.labels" . | nindent 8 }}
+    spec:
+      tolerations:
+      {{- if .Values.global.tolerations }}
+      {{- .Values.global.tolerations | toYaml | nindent 8 }}
+      {{- end }}
+      nodeSelector:
+      {{- if .Values.global.nodeSelector }}
+      {{- .Values.global.nodeSelector | toYaml | nindent 8 }}
+      {{- end }}
+      restartPolicy: Never
+      serviceAccountName: {{ include "zouz-operator-chart.nsPrefix" . }}-attrb-pre-install-hook
+      # hostPID + the rootfs hostPath mount below let the probe read the
+      # kubelet's process/command line and config off the host to discover the
+      # cluster name (the kubelet doesn't expose it via the in-cluster API).
+      hostPID: true
+      # hostNetwork is required to reach the cloud provider's metadata endpoint
+      # (e.g. 169.254.169.254), which is only routable from the node's network
+      # namespace, to detect the cloud environment / cluster identity.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      volumes:
+        # Host root mounted read-only so the probe can read the kubelet
+        # parameters/config used to derive the cluster name.
+        - name: rootfs
+          hostPath:
+            path: /
+            type: Directory
+      containers:
+      - name: zprobe-k8s-init-container
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "20m"
+        image: {{ .Values.initconfig.image | quote }}
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+          - name: rootfs
+            mountPath: /mnt/rootfs
+            readOnly: true
+        env:
+        - name: HOST_PATH
+          value: /mnt/rootfs
+        - name: HOST_PROC_PATH
+          value: /mnt/rootfs/proc
+        - name: GOMEMLIMIT
+          value: "128MiB"
+        - name: NAMESPACE
+          value: {{ .Release.Namespace }}
+        - name: API_HOST
+          value: {{ .Values.initconfig.host | quote }}
+        - name: SECRET_NAME
+          value: {{ .Values.initconfig.secretName | quote }}
+        - name: SECRET_KEY_TOKEN
+          value: token
+        - name: SECRET_KEY_CLUSTER_NAME
+          value: clustername
+        - name: TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.initconfig.orgToken.secretName | quote }}
+              key: {{ .Values.initconfig.orgToken.secretKey | quote }}
+        {{- with .Values.extraEnv }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.initconfig.securityContext }}
+        securityContext:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+
+---
+
+{{- end -}}

@@ -1,0 +1,83 @@
+# Dummy agent image. It only prints its node name and its own requests/limits
+# (read through the downward API) so the sizing can be verified from logs.
+image:
+  repository: busybox
+  tag: "1.36"
+  pullPolicy: IfNotPresent
+
+# Seconds between log lines.
+logIntervalSeconds: 60
+
+serviceAccount:
+  create: true
+  name: ""
+
+# Applied to every rendered DaemonSet.
+nodeSelector: {}
+tolerations:
+  # DaemonSet agents usually need to run on every node, including tainted ones.
+  - operator: Exists
+podAnnotations: {}
+podLabels: {}
+priorityClassName: ""
+terminationGracePeriodSeconds: 10
+
+# Used only when nodeSizing.enabled is false (single DaemonSet, fixed size).
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+
+nodeSizing:
+  enabled: true
+
+  # Node label whose value identifies the node size. On GKE, EKS and AKS the
+  # well-known label below carries the machine type (e2-standard-4, m5.xlarge, ...).
+  labelKey: node.kubernetes.io/instance-type
+
+  # Each tier becomes its own DaemonSet named <release>-<chart>-<tier.name>.
+  # A node must match exactly one tier (or none, and then fall to `default`).
+  # Instance types are checked for duplicates across tiers at render time.
+  #
+  # Optional per-tier fields:
+  #   matchExpressions: extra node-affinity matchExpressions ANDed with the
+  #                     instance-type match (e.g. restrict a tier to a pool).
+  tiers:
+    - name: small
+      instanceTypes:
+        - e2-medium
+        - e2-standard-2
+        - n2-standard-2
+      resources:
+        requests: { cpu: 50m,  memory: 64Mi }
+        limits:   { memory: 128Mi }
+    - name: medium
+      instanceTypes:
+        - e2-standard-4
+        - n2-standard-4
+      resources:
+        requests: { cpu: 100m, memory: 128Mi }
+        limits:   { memory: 256Mi }
+    - name: large
+      instanceTypes:
+        - e2-standard-8
+        - e2-standard-16
+        - n2-standard-8
+        - n2-standard-16
+      resources:
+        requests: { cpu: 250m, memory: 256Mi }
+        limits:   { memory: 512Mi }
+
+  # Catch-all DaemonSet for nodes whose instance type is in no tier above.
+  # It uses a NotIn affinity over the union of all tier instance types, so
+  # every node is covered by exactly one DaemonSet. NotIn also matches nodes
+  # that lack the label entirely. With no tiers defined it has no affinity and
+  # runs everywhere (the API server rejects NotIn with an empty value list). Disable only if you are
+  # sure every node type in the cluster is listed in a tier.
+  default:
+    enabled: true
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits:   { memory: 256Mi }

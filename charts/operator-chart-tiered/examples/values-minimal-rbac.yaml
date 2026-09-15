@@ -1,0 +1,65 @@
+# Minimal RBAC allowlist for the zouz-object-lister / attrb-object-lister
+# ClusterRoles (operator, sensor, and optional cluster inventory).
+#
+# By default the chart grants cluster-wide get/watch/list on every resource
+# (including Secrets) because workload root-object resolution follows pod
+# ownerReference chains into arbitrary controller CRDs. This values overlay
+# replaces that wildcard with an enumerated allowlist of everything the
+# operator and sensor read cluster-wide. Secrets are deliberately excluded —
+# nothing in the operator or sensor reads Secret data.
+#
+#   helm install ... -f values-minimal-rbac.yaml
+#
+# IMPORTANT: append one rule per controller CRD that owns workload pods in
+# your cluster (some common ones, like Argo, are already included below).
+# If an owner CRD is missing, its pods are still monitored but are reported
+# as standalone Pods instead of being attributed to their root workload, and
+# the operator logs "Forbidden" list/watch errors for the missing resource.
+
+objectlistpermissions:
+  rules:
+    # Node and pod discovery, kubelet stats (nodes/proxy), namespace labels,
+    # volume tracking (PV/PVC), and Service load-balancer tracking.
+    - apiGroups: [""]
+      resources:
+        - nodes
+        - nodes/proxy
+        - pods
+        - namespaces
+        - services
+        - persistentvolumes
+        - persistentvolumeclaims
+        - replicationcontrollers
+    # Standard workload owners (also covers cloud-environment detection,
+    # which reads DaemonSets in kube-system).
+    - apiGroups: ["apps"]
+      resources:
+        - deployments
+        - replicasets
+        - statefulsets
+        - daemonsets
+    - apiGroups: ["batch"]
+      resources:
+        - jobs
+        - cronjobs
+    # Load-balancer tracking.
+    - apiGroups: ["networking.k8s.io"]
+      resources:
+        - ingresses
+    - apiGroups: ["discovery.k8s.io"]
+      resources:
+        - endpointslices
+    # EKS environment detection (aws-node CNI custom resources).
+    - apiGroups: ["vpcresources.k8s.aws"]
+      resources:
+        - cninodes
+    # Common workload-owner CRDs (Argo Rollouts / Argo Workflows).
+    - apiGroups: ["argoproj.io"]
+      resources:
+        - rollouts
+        - workflows
+        - cronworkflows
+    # Add one rule per additional workload-owner CRD in your cluster, e.g.:
+    # - apiGroups: ["keda.sh"]
+    #   resources:
+    #     - scaledjobs

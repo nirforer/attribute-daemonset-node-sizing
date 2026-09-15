@@ -1,0 +1,149 @@
+{{- $clustername := "" -}}
+{{- $token := "" -}}
+
+{{- if eq .Values.initconfig.enabled false -}}
+{{- $clustername = .Values.cluster_name | required "cluster_name is required" -}}
+{{- $token = .Values.token | required "token is required" -}}
+{{- end -}}
+
+{{- include "zouz-operator-chart.validateRemovedValues" . -}}
+{{- $exporturl := .Values.export_url -}}
+{{- if eq .Values.otelproxy.enabled true }}
+{{- $exporturl = printf "%s-collector.%s.svc.cluster.local:4317" .Release.Name .Release.Namespace -}}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "zouz-operator-chart.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "zouz-operator-chart.labels" . | nindent 4 }}
+    app: "attrb-operator"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "zouz-operator-chart.selectorLabels" . | nindent 6 }}
+      app: "attrb-operator"
+  template:
+    metadata:
+      labels:
+        {{- include "zouz-operator-chart.labels" . | nindent 8 }}
+        app: "attrb-operator"
+        attrb.io/inventory-client: "true"
+    spec:
+      tolerations: 
+      {{- if .Values.operator.selectors.tolerations }}
+      {{- .Values.operator.selectors.tolerations | toYaml | nindent 8 }}
+      {{- end }}
+      {{- if .Values.global.tolerations }}
+      {{- .Values.global.tolerations | toYaml | nindent 8 }}
+      {{- end }}
+      nodeSelector:
+      {{- if .Values.operator.selectors.nodeSelector }}
+      {{- .Values.operator.selectors.nodeSelector | toYaml | nindent 8 }}
+      {{- end }}
+      {{- if .Values.global.nodeSelector }}
+      {{- .Values.global.nodeSelector | toYaml | nindent 8 }}
+      {{- end }}
+      serviceAccountName: "{{ include "zouz-operator-chart.nsPrefix" . }}-zouz-operator"
+      {{- with .Values.operator.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: {{ include "zouz-operator-chart.operatorImage" . }}
+          imagePullPolicy: IfNotPresent
+          {{- with .Values.operator.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          args:
+            - /app/zouz-operator
+            - -namespace={{ .Release.Namespace }}
+            {{- if and (eq .Values.token_is_secret false) (eq .Values.initconfig.enabled false) }}
+            - -token={{ $token }}
+            {{- end }}
+            - -deployment={{ include "zouz-operator-chart.fullname" . }}
+            - -export-url={{ $exporturl }}
+          env:
+          {{- if eq .Values.initconfig.enabled false }}
+          - name: CLUSTER_NAME
+            value: "{{ $clustername }}"
+          {{- else }}
+          - name: CLUSTER_NAME
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.initconfig.secretName | quote }}
+                key: clustername
+          {{- end }}
+          - name: SENSOR_REPOSITORY
+            value: "{{ include "zouz-operator-chart.sensorImageRepo" . }}"
+          - name: SENSOR_TAG
+            value: "{{ include "zouz-operator-chart.sensorImageTag" . }}"
+          - name: SENSOR_RESOURCES_CPU_REQUEST
+            value: "{{ .Values.sensorresources.cpu.request }}"
+          - name: SENSOR_RESOURCES_CPU_LIMIT
+            value: "{{ .Values.sensorresources.cpu.limit }}"
+          - name: SENSOR_RESOURCES_MEMORY_REQUEST
+            value: "{{ .Values.sensorresources.memory.request }}"
+          - name: SENSOR_RESOURCES_MEMORY_LIMIT
+            value: "{{ .Values.sensorresources.memory.limit }}"
+          - name: DISABLE_EVALUATIONS
+            value: "{{ .Values.daemonset.enabled }}"
+          - name: USE_APP_TAGS
+            value: "{{ .Values.use_app_name_label }}"
+          - name: CONFIG_ENDPOINT
+            value: "{{ .Values.config_endpoint }}"
+          # Release-scoped names the operator must reuse for the sensor pods it
+          # creates at runtime (see _helpers.tpl / finding H3).
+          - name: SENSOR_SERVICE_ACCOUNT
+            value: "{{ include "zouz-operator-chart.sensorServiceAccountName" . }}"
+          - name: SENSOR_PRIORITY_CLASS
+            value: "{{ include "zouz-operator-chart.sensorPriorityClassName" . }}"
+          - name: GOMEMLIMIT
+            valueFrom:
+              resourceFieldRef:
+                divisor: '0'
+                resource: limits.memory
+          - name: GOMAXPROCS
+            valueFrom:
+              resourceFieldRef:
+                divisor: '0'
+                resource: limits.cpu
+          {{- if (.Values.featureFlags | default dict).url }}
+          {{- include "zouz-operator-chart.featureFlagsEnv" . | nindent 10 }}
+          {{- end }}
+          {{- if eq .Values.initconfig.enabled true }}
+          - name: API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.initconfig.secretName | quote }}
+                key: token
+          {{- else if eq .Values.token_is_secret true }}
+          - name: API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.token }}
+                key: {{ .Values.token }}
+          {{- end }}
+          {{- with .Values.extraEnv }}
+          {{- toYaml . | nindent 10 }}
+          {{- end }}
+          {{- /* Writable /tmp. The container runs with readOnlyRootFilesystem,
+                 and the Unleash SDK caches the toggle set in
+                 /tmp/unleash-repo-schema-v1-<appName>.json after every poll and
+                 reloads it at boot — so without this, a restart while Unleash is
+                 unreachable falls back to code defaults instead of the last
+                 known-good flags. The SDK discards the write error, so the
+                 failure is silent. Ephemeral by design: it is a cache. */}}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

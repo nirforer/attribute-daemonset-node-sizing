@@ -1,0 +1,16 @@
+{{- range .Values.coverageconfigs }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    type: filter
+data:
+  kind: "{{ .data.kind }}"
+  name: "{{ .data.name }}"
+  namespace: "{{ .data.namespace }}"
+  targetCoveragePercent: "{{ .targetCoveragePercent }}"
+{{- end }}
+---

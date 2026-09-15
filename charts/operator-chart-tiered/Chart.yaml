@@ -1,0 +1,9 @@
+apiVersion: v2
+appVersion: 2.32.291
+description: Zouz Operator
+maintainers:
+- email: devops@attrb.io
+  name: Attribute
+name: operator-chart
+type: application
+version: 0.0.98

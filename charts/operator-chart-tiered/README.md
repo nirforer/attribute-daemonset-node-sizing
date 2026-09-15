@@ -1,0 +1,241 @@
+# zouz-operator-chart
+
+![Version: 0.0.98](https://img.shields.io/badge/Version-0.0.98-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 2.32.291](https://img.shields.io/badge/AppVersion-2.32.291-informational?style=flat-square)
+
+Zouz Operator
+
+## Maintainers
+
+| Name | Email | Url |
+| ---- | ------ | --- |
+| Attribute | <devops@attrb.io> |  |
+
+## Values
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| cluster_name | string | `nil` |  |
+| clusterinventory.enabled | bool | `false` |  |
+| clusterinventory.image | string | `"us-docker.pkg.dev/attribute-registry/operator/attrb-cluster-inventory:0.1.4"` |  |
+| clusterinventory.podSecurityContext.fsGroup | int | `65532` |  |
+| clusterinventory.podSecurityContext.runAsGroup | int | `65532` |  |
+| clusterinventory.podSecurityContext.runAsNonRoot | bool | `true` |  |
+| clusterinventory.podSecurityContext.runAsUser | int | `65532` |  |
+| clusterinventory.podSecurityContext.seccompProfile.type | string | `"RuntimeDefault"` |  |
+| clusterinventory.replicas | int | `3` |  |
+| clusterinventory.resources.limits.cpu | string | `"100m"` |  |
+| clusterinventory.resources.limits.memory | string | `"1Gi"` |  |
+| clusterinventory.resources.requests.cpu | string | `"50m"` |  |
+| clusterinventory.resources.requests.memory | string | `"500Mi"` |  |
+| clusterinventory.resync_time.owners | string | `"1m"` |  |
+| clusterinventory.resync_time.pods | string | `"1m"` |  |
+| clusterinventory.securityContext.allowPrivilegeEscalation | bool | `false` |  |
+| clusterinventory.securityContext.capabilities.drop[0] | string | `"ALL"` |  |
+| clusterinventory.securityContext.privileged | bool | `false` |  |
+| clusterinventory.securityContext.readOnlyRootFilesystem | bool | `true` |  |
+| config_endpoint | string | `"https://sensor-config.app.attrb.io"` |  |
+| coverageconfigs[0].data.kind | string | `"Node"` |  |
+| coverageconfigs[0].data.name | string | `""` |  |
+| coverageconfigs[0].data.namespace | string | `""` |  |
+| coverageconfigs[0].name | string | `"match-nodes"` |  |
+| coverageconfigs[0].targetCoveragePercent | string | `"100"` |  |
+| daemonset.enabled | bool | `false` |  |
+| daemonset.karpconfig.cpu12.cpu | int | `12` |  |
+| daemonset.karpconfig.cpu12.limit | string | `"600m"` |  |
+| daemonset.karpconfig.cpu12.mem_limit | string | `"1200Mi"` |  |
+| daemonset.karpconfig.cpu12.mem_request | string | `"300Mi"` |  |
+| daemonset.karpconfig.cpu12.request | string | `"120m"` |  |
+| daemonset.karpconfig.cpu128.cpu | int | `128` |  |
+| daemonset.karpconfig.cpu128.limit | string | `"6400m"` |  |
+| daemonset.karpconfig.cpu128.mem_limit | string | `"12Gi"` |  |
+| daemonset.karpconfig.cpu128.mem_request | string | `"2560Mi"` |  |
+| daemonset.karpconfig.cpu128.request | string | `"1280m"` |  |
+| daemonset.karpconfig.cpu16.cpu | int | `16` |  |
+| daemonset.karpconfig.cpu16.limit | string | `"800m"` |  |
+| daemonset.karpconfig.cpu16.mem_limit | string | `"1600Mi"` |  |
+| daemonset.karpconfig.cpu16.mem_request | string | `"320Mi"` |  |
+| daemonset.karpconfig.cpu16.request | string | `"160m"` |  |
+| daemonset.karpconfig.cpu192.cpu | int | `192` |  |
+| daemonset.karpconfig.cpu192.limit | string | `"9600m"` |  |
+| daemonset.karpconfig.cpu192.mem_limit | string | `"19Gi"` |  |
+| daemonset.karpconfig.cpu192.mem_request | string | `"4Gi"` |  |
+| daemonset.karpconfig.cpu192.request | string | `"1920m"` |  |
+| daemonset.karpconfig.cpu2.cpu | int | `2` |  |
+| daemonset.karpconfig.cpu2.limit | string | `"100m"` |  |
+| daemonset.karpconfig.cpu2.mem_limit | string | `"1Gi"` |  |
+| daemonset.karpconfig.cpu2.mem_request | string | `"300Mi"` |  |
+| daemonset.karpconfig.cpu2.request | string | `"100m"` |  |
+| daemonset.karpconfig.cpu24.cpu | int | `24` |  |
+| daemonset.karpconfig.cpu24.limit | string | `"1200m"` |  |
+| daemonset.karpconfig.cpu24.mem_limit | string | `"3Gi"` |  |
+| daemonset.karpconfig.cpu24.mem_request | string | `"640Mi"` |  |
+| daemonset.karpconfig.cpu24.request | string | `"240m"` |  |
+| daemonset.karpconfig.cpu32.cpu | int | `32` |  |
+| daemonset.karpconfig.cpu32.limit | string | `"1600m"` |  |
+| daemonset.karpconfig.cpu32.mem_limit | string | `"3Gi"` |  |
+| daemonset.karpconfig.cpu32.mem_request | string | `"640Mi"` |  |
+| daemonset.karpconfig.cpu32.request | string | `"320m"` |  |
+| daemonset.karpconfig.cpu4.cpu | int | `4` |  |
+| daemonset.karpconfig.cpu4.limit | string | `"200m"` |  |
+| daemonset.karpconfig.cpu4.mem_limit | string | `"1Gi"` |  |
+| daemonset.karpconfig.cpu4.mem_request | string | `"300Mi"` |  |
+| daemonset.karpconfig.cpu4.request | string | `"100m"` |  |
+| daemonset.karpconfig.cpu48.cpu | int | `48` |  |
+| daemonset.karpconfig.cpu48.limit | string | `"2400m"` |  |
+| daemonset.karpconfig.cpu48.mem_limit | string | `"4Gi"` |  |
+| daemonset.karpconfig.cpu48.mem_request | string | `"1Gi"` |  |
+| daemonset.karpconfig.cpu48.request | string | `"480m"` |  |
+| daemonset.karpconfig.cpu64.cpu | int | `64` |  |
+| daemonset.karpconfig.cpu64.limit | string | `"3200m"` |  |
+| daemonset.karpconfig.cpu64.mem_limit | string | `"6Gi"` |  |
+| daemonset.karpconfig.cpu64.mem_request | string | `"1280Mi"` |  |
+| daemonset.karpconfig.cpu64.request | string | `"640m"` |  |
+| daemonset.karpconfig.cpu72.cpu | int | `72` |  |
+| daemonset.karpconfig.cpu72.limit | string | `"3600m"` |  |
+| daemonset.karpconfig.cpu72.mem_limit | string | `"8Gi"` |  |
+| daemonset.karpconfig.cpu72.mem_request | string | `"1500Mi"` |  |
+| daemonset.karpconfig.cpu72.request | string | `"720m"` |  |
+| daemonset.karpconfig.cpu8.cpu | int | `8` |  |
+| daemonset.karpconfig.cpu8.limit | string | `"400m"` |  |
+| daemonset.karpconfig.cpu8.mem_limit | string | `"1Gi"` |  |
+| daemonset.karpconfig.cpu8.mem_request | string | `"300Mi"` |  |
+| daemonset.karpconfig.cpu8.request | string | `"100m"` |  |
+| daemonset.karpconfig.cpu96.cpu | int | `96` |  |
+| daemonset.karpconfig.cpu96.limit | string | `"4800m"` |  |
+| daemonset.karpconfig.cpu96.mem_limit | string | `"9Gi"` |  |
+| daemonset.karpconfig.cpu96.mem_request | string | `"1960Mi"` |  |
+| daemonset.karpconfig.cpu96.request | string | `"960m"` |  |
+| daemonset.karpconfig.default.cpus[0] | int | `2` |  |
+| daemonset.karpconfig.default.cpus[10] | int | `96` |  |
+| daemonset.karpconfig.default.cpus[11] | int | `128` |  |
+| daemonset.karpconfig.default.cpus[12] | int | `192` |  |
+| daemonset.karpconfig.default.cpus[1] | int | `4` |  |
+| daemonset.karpconfig.default.cpus[2] | int | `8` |  |
+| daemonset.karpconfig.default.cpus[3] | int | `12` |  |
+| daemonset.karpconfig.default.cpus[4] | int | `16` |  |
+| daemonset.karpconfig.default.cpus[5] | int | `24` |  |
+| daemonset.karpconfig.default.cpus[6] | int | `32` |  |
+| daemonset.karpconfig.default.cpus[7] | int | `48` |  |
+| daemonset.karpconfig.default.cpus[8] | int | `64` |  |
+| daemonset.karpconfig.default.cpus[9] | int | `72` |  |
+| daemonset.karpenter | bool | `false` |  |
+| daemonset.selectors.nodeSelector | string | `nil` |  |
+| daemonset.selectors.tolerations[0].operator | string | `"Exists"` |  |
+| enable_sensors | bool | `true` |  |
+| export_url | string | `"otel-endpoint.app.attrb.io:443"` |  |
+| extraEnv | list | `[]` |  |
+| extraLabels | object | `{}` |  |
+| featureFlags.url | string | `""` | Base URL of the Unleash *client* API to evaluate flags against. Empty (default) means the compiled-in Attribute-hosted Edge, https://ff.app.attrb.io/api. Only set this to point at your own in-cluster Unleash Edge. |
+| global.nodeSelector | string | `nil` |  |
+| global.tolerations | string | `nil` |  |
+| image.operator.repository | string | `"us-docker.pkg.dev/attribute-registry/operator/zouz-operator"` |  |
+| image.operator.tag | string | `"0.0.32"` |  |
+| image.sensor.repository | string | `"us-central1-docker.pkg.dev/attribute-registry/sensor/zprobe"` |  |
+| image.sensor.tag | string | `"0.0.291"` |  |
+| initconfig.create_secret | bool | `true` |  |
+| initconfig.enabled | bool | `true` |  |
+| initconfig.host | string | `"https://sensor.app.attrb.io"` |  |
+| initconfig.image | string | `"us-docker.pkg.dev/attribute-registry/operator/zprobe-k8s-init:1.0.14"` |  |
+| initconfig.orgToken.secretKey | string | `"token"` |  |
+| initconfig.orgToken.secretName | string | `"attrb-pre-install-hook-secret"` |  |
+| initconfig.secretName | string | `"attrb-credentials"` |  |
+| initconfig.securityContext.allowPrivilegeEscalation | bool | `false` |  |
+| initconfig.securityContext.appArmorProfile.type | string | `"Unconfined"` |  |
+| initconfig.securityContext.capabilities.add[0] | string | `"DAC_READ_SEARCH"` |  |
+| initconfig.securityContext.capabilities.add[1] | string | `"SYS_PTRACE"` |  |
+| initconfig.securityContext.capabilities.drop[0] | string | `"ALL"` |  |
+| initconfig.securityContext.privileged | bool | `false` |  |
+| initconfig.securityContext.readOnlyRootFilesystem | bool | `true` |  |
+| initconfig.securityContext.runAsUser | int | `0` |  |
+| initconfig.securityContext.seLinuxOptions.type | string | `"spc_t"` |  |
+| javaAutoInject.enabled | bool | `false` |  |
+| javaAutoInject.failurePolicy | string | `"Ignore"` |  |
+| javaAutoInject.image.repository | string | `"quay.io/attribute/java-agent"` |  |
+| javaAutoInject.image.tag | string | `"0.0.11"` |  |
+| javaAutoInject.imagePullPolicy | string | `"IfNotPresent"` |  |
+| javaAutoInject.injectAnnotation | string | `"instrumentation.attrb.io/inject-java"` |  |
+| javaAutoInject.mode | string | `"auto"` |  |
+| javaAutoInject.mountPath | string | `"/attrb-jagent"` |  |
+| javaAutoInject.reinvocationPolicy | string | `"Never"` |  |
+| javaAutoInject.resourceName | string | `"attrb-jagent"` |  |
+| javaAutoInject.resources.limits.cpu | string | `"100m"` |  |
+| javaAutoInject.resources.limits.memory | string | `"64Mi"` |  |
+| javaAutoInject.resources.requests.cpu | string | `"100m"` |  |
+| javaAutoInject.resources.requests.memory | string | `"64Mi"` |  |
+| javaAutoInject.securityContext.allowPrivilegeEscalation | bool | `false` |  |
+| javaAutoInject.securityContext.capabilities.drop[0] | string | `"ALL"` |  |
+| javaAutoInject.securityContext.privileged | bool | `false` |  |
+| javaAutoInject.securityContext.readOnlyRootFilesystem | bool | `true` |  |
+| javaAutoInject.securityContext.runAsGroup | int | `65532` |  |
+| javaAutoInject.securityContext.runAsNonRoot | bool | `true` |  |
+| javaAutoInject.securityContext.runAsUser | int | `65532` |  |
+| javaAutoInject.securityContext.seccompProfile.type | string | `"RuntimeDefault"` |  |
+| javaAutoInject.sourcePath | string | `"/jagent/jagent.jar"` |  |
+| javaAutoInject.targetFileName | string | `"attribute-jagent.jar"` |  |
+| javaAutoInject.webhook.antiAffinity | string | `"preferred"` |  |
+| javaAutoInject.webhook.certDurationDays | int | `3650` |  |
+| javaAutoInject.webhook.namespaceSelector | object | `{}` |  |
+| javaAutoInject.webhook.podDisruptionBudget.enabled | bool | `true` |  |
+| javaAutoInject.webhook.podDisruptionBudget.maxUnavailable | int | `1` |  |
+| javaAutoInject.webhook.port | int | `8443` |  |
+| javaAutoInject.webhook.preStopDrainSeconds | int | `5` |  |
+| javaAutoInject.webhook.replicas | int | `3` |  |
+| javaAutoInject.webhook.resources.limits.cpu | string | `"200m"` |  |
+| javaAutoInject.webhook.resources.limits.memory | string | `"128Mi"` |  |
+| javaAutoInject.webhook.resources.requests.cpu | string | `"50m"` |  |
+| javaAutoInject.webhook.resources.requests.memory | string | `"64Mi"` |  |
+| javaAutoInject.webhook.timeoutSeconds | int | `2` |  |
+| networkPolicy.allowDNS | bool | `true` |  |
+| networkPolicy.egressRules | list | `[]` |  |
+| networkPolicy.enabled | bool | `false` |  |
+| networkPolicy.ingressOnly | bool | `true` |  |
+| objectlistpermissions.apiGroups | list | `["*"]` | apiGroups for the default single-rule wildcard grant. Ignored when `rules` is set. |
+| objectlistpermissions.resources | list | `["*"]` | Resources for the default single-rule wildcard grant. Ignored when `rules` is set. |
+| objectlistpermissions.rules | list | `[]` | Optional explicit allowlist of {apiGroups, resources} rules (verbs are always get/watch/list). When non-empty this takes precedence over apiGroups/resources above. See examples/values-minimal-rbac.yaml for the recommended minimal set (which deliberately excludes Secrets). |
+| operator.podSecurityContext.fsGroup | int | `65532` |  |
+| operator.podSecurityContext.runAsGroup | int | `65532` |  |
+| operator.podSecurityContext.runAsNonRoot | bool | `true` |  |
+| operator.podSecurityContext.runAsUser | int | `65532` |  |
+| operator.podSecurityContext.seccompProfile.type | string | `"RuntimeDefault"` |  |
+| operator.securityContext.allowPrivilegeEscalation | bool | `false` |  |
+| operator.securityContext.capabilities.drop[0] | string | `"ALL"` |  |
+| operator.securityContext.privileged | bool | `false` |  |
+| operator.securityContext.readOnlyRootFilesystem | bool | `true` |  |
+| operator.selectors.nodeSelector | string | `nil` |  |
+| operator.selectors.tolerations | string | `nil` |  |
+| otelproxy.enabled | bool | `false` |  |
+| otelproxy.extraExporters.logs | list | `[]` |  |
+| otelproxy.extraExporters.metrics | list | `[]` |  |
+| otelproxy.extraExporters.traces | list | `[]` |  |
+| otelproxy.extraExportersDefinitions | object | `{}` |  |
+| otelproxy.extraProcessors.logs | list | `[]` |  |
+| otelproxy.extraProcessors.metrics | list | `[]` |  |
+| otelproxy.extraProcessors.traces | list | `[]` |  |
+| otelproxy.extraProcessorsDefinitions | object | `{}` |  |
+| otelproxy.image | string | `"otel/opentelemetry-collector:0.132.4"` |  |
+| otelproxy.nodeSelector | string | `nil` |  |
+| otelproxy.replicas | int | `1` |  |
+| otelproxy.resources.cpu.limit | string | `"200m"` |  |
+| otelproxy.resources.cpu.request | string | `"100m"` |  |
+| otelproxy.resources.memory.limit_mib | int | `1000` |  |
+| otelproxy.resources.memory.request | string | `"300Mi"` |  |
+| otelproxy.tolerations | string | `nil` |  |
+| priorityclass.enabled | bool | `false` |  |
+| priorityclass.existingName | string | `""` |  |
+| priorityclass.value | int | `1000000` |  |
+| reducePermissions | bool | `false` |  |
+| resources | object | `{}` |  |
+| rollout_max_unavailable | string | `"10%"` |  |
+| sensorDNSPolicy | string | `"ClusterFirst"` |  |
+| sensorDisableAutoJavaInstrumentation | bool | `false` |  |
+| sensorHostNetwork | bool | `false` |  |
+| sensorresources.cpu.limit | string | `nil` |  |
+| sensorresources.cpu.request | string | `"100m"` |  |
+| sensorresources.memory.limit | string | `nil` |  |
+| sensorresources.memory.request | string | `"300Mi"` |  |
+| token | string | `nil` |  |
+| token_is_secret | bool | `false` |  |
+| use_app_name_label | bool | `false` |  |
+
+----------------------------------------------
+Autogenerated from chart metadata using [helm-docs v1.14.2](https://github.com/norwoodj/helm-docs/releases/v1.14.2)

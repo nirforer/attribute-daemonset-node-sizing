@@ -1,0 +1,86 @@
+{{- if eq .Values.enable_sensors true -}}
+{{- if and (eq .Values.daemonset.enabled true) (eq .Values.daemonset.karpenter false) -}}
+{{- $root := . -}}
+
+{{- $exporturl := .Values.export_url -}}
+{{- if eq .Values.otelproxy.enabled true -}}
+{{- $exporturl = printf "%s-collector.%s.svc.cluster.local:4317" .Release.Name .Release.Namespace -}}
+{{- end -}}
+
+{{- /*
+Tiers: validate, and collect the label values each tier claims so the catch-all
+can exclude them. A node must match at most one tier, otherwise two sensors
+would run on it, so the same key=value may not appear in two tiers.
+*/ -}}
+{{- $tiers := .Values.daemonset.tiers | default dict -}}
+{{- if ne (kindOf $tiers) "map" -}}
+{{- fail "daemonset.tiers must be a map of <tierName>: {values: [...], resources: {...}}" -}}
+{{- end -}}
+{{- $claimed := dict -}}
+{{- $byKey := dict -}}
+{{- range $name, $t := $tiers -}}
+  {{- if eq $name "default" -}}
+  {{- fail "daemonset.tiers: \"default\" is reserved for the catch-all DaemonSet" -}}
+  {{- end -}}
+  {{- if not (regexMatch "^[a-z0-9]([-a-z0-9]{0,30}[a-z0-9])?$" $name) -}}
+  {{- fail (printf "daemonset.tiers: tier name %q must be a short DNS-1123 label (lowercase letters, digits, hyphens)" $name) -}}
+  {{- end -}}
+  {{- $key := $t.key | default $root.Values.daemonset.tierLabelKey -}}
+  {{- if not $key -}}
+  {{- fail (printf "daemonset.tiers.%s: no label key; set daemonset.tierLabelKey or tiers.%s.key" $name $name) -}}
+  {{- end -}}
+  {{- if not $t.values -}}
+  {{- fail (printf "daemonset.tiers.%s: values must list at least one label value" $name) -}}
+  {{- end -}}
+  {{- range $v := ($t.values | toStrings) -}}
+    {{- $id := printf "%s=%s" $key $v -}}
+    {{- if hasKey $claimed $id -}}
+    {{- fail (printf "daemonset.tiers: node label %s is claimed by tiers %q and %q; a node may match only one tier" $id (get $claimed $id) $name) -}}
+    {{- end -}}
+    {{- $_ := set $claimed $id $name -}}
+    {{- $_ := set $byKey $key (append (get $byKey $key | default list) $v) -}}
+  {{- end -}}
+{{- end -}}
+
+{{- /* Catch-all (or the plain single DaemonSet when no tiers are configured). */ -}}
+{{- $defaultExprs := list -}}
+{{- range $key, $vals := $byKey -}}
+{{- $defaultExprs = append $defaultExprs (dict "key" $key "operator" "NotIn" "values" $vals) -}}
+{{- end -}}
+{{ include "zouz-operator-chart.sensorDaemonSet" (dict
+      "root" $root
+      "name" .Release.Name
+      "tier" (ternary "default" "" (gt (len $tiers) 0))
+      "exprs" $defaultExprs
+      "res" .Values.sensorresources
+      "tolerations" .Values.daemonset.selectors.tolerations
+      "exporturl" $exporturl) }}
+
+{{- /* One DaemonSet per tier. */ -}}
+{{- range $name, $t := $tiers }}
+{{- $key := $t.key | default $root.Values.daemonset.tierLabelKey -}}
+{{- /*
+A tier's cpu / memory block replaces the matching sensorresources block as a
+whole (request and limit together); a block the tier does not set is inherited.
+Inheriting field by field would let a tier raise a request above an inherited
+limit, which the API server rejects.
+*/ -}}
+{{- $tr := $t.resources | default dict -}}
+{{- $cpu := $tr.cpu | default $root.Values.sensorresources.cpu -}}
+{{- $mem := $tr.memory | default $root.Values.sensorresources.memory -}}
+{{- if not $cpu.request -}}{{- fail (printf "daemonset.tiers.%s.resources.cpu.request is required when cpu is set" $name) -}}{{- end -}}
+{{- if not $mem.request -}}{{- fail (printf "daemonset.tiers.%s.resources.memory.request is required when memory is set" $name) -}}{{- end -}}
+{{- $res := dict "cpu" $cpu "memory" $mem }}
+{{- /* the newline before the separator is deliberate: the previous document ends without one */}}
+---
+{{ include "zouz-operator-chart.sensorDaemonSet" (dict
+      "root" $root
+      "name" (printf "%s-%s" $root.Release.Name $name)
+      "tier" $name
+      "exprs" (list (dict "key" $key "operator" "In" "values" ($t.values | toStrings)))
+      "res" $res
+      "tolerations" ($t.tolerations | default $root.Values.daemonset.selectors.tolerations)
+      "exporturl" $exporturl) }}
+{{- end }}
+{{ end }}
+{{ end }}

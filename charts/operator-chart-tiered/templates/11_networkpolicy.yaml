@@ -1,0 +1,135 @@
+{{- if .Values.networkPolicy.enabled -}}
+{{- /*
+  NetworkPolicies for the chart's pods. Opt-in (networkPolicy.enabled).
+
+  Scope / caveats:
+  - Only enforced if the cluster CNI implements NetworkPolicy (Calico, Cilium,
+    ...). On a CNI that ignores it, these objects are a silent no-op.
+  - hostNetwork pods are NOT governed by NetworkPolicy: the pre-install hook
+    (always hostNetwork) and the sensor when `sensorHostNetwork=true` use the
+    node's network namespace, so the selectors below do not apply to them.
+  - Egress (networkPolicy.ingressOnly=false): a default-deny-egress policy is
+    added that allows only DNS plus the rules you list in
+    `networkPolicy.egressRules`. External destinations (OTEL endpoint,
+    Unleash, config endpoint) are FQDNs that NetworkPolicy can't match by
+    name, so you must encode their IP CIDRs in egressRules (or use a CNI FQDN
+    policy). With ingressOnly=true (default) egress is left open.
+  - The Java-inject webhook (javaAutoInject mode=webhook) is the only chart pod
+    that receives inbound traffic from outside the pod network; its port is
+    opened below. With ingressOnly=false it also needs the kube-apiserver in
+    `egressRules` — it watches Namespaces for the namespace-level opt-in
+    annotation, and without that reachable it injects on pod annotations only.
+*/}}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: "{{ .Release.Name }}-default-deny-ingress"
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "zouz-operator-chart.labels" . | nindent 4 }}
+spec:
+  # All pods this chart manages (operator, inventory, sensors) carry this label.
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes:
+    - Ingress
+  # No ingress rules => deny all inbound. The operator and sensors expose no
+  # ports, so this fully isolates their inbound surface. Inventory's allowed
+  # port is opened additively by the policy below.
+{{- if eq .Values.clusterinventory.enabled true }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: "{{ .Release.Name }}-allow-inventory-ingress"
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "zouz-operator-chart.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: "attrb-cluster-inventory"
+  policyTypes:
+    - Ingress
+  ingress:
+    # Only the operator and sensor pods are allowed to query the inventory.
+    # They carry attrb.io/inventory-client=true; no other pod (chart-managed or
+    # otherwise) can reach 9191.
+    - from:
+        - podSelector:
+            matchLabels:
+              attrb.io/inventory-client: "true"
+      ports:
+        - protocol: TCP
+          port: 9191
+{{- end }}
+{{- if include "zouz-operator-chart.javaInjectWebhookEnabled" . }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: "{{ .Release.Name }}-allow-inject-java-webhook-ingress"
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "zouz-operator-chart.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: "attrb-inject-java-webhook"
+  policyTypes:
+    - Ingress
+  ingress:
+    # The Java-inject webhook is the one chart pod the default-deny above must
+    # not isolate: the kube-apiserver calls it on every matching pod CREATE, and
+    # a dropped call means injection silently stops (failurePolicy=Ignore) or
+    # every matching pod CREATE in the cluster is rejected (failurePolicy=Fail).
+    #
+    # No `from` selector: the apiserver is not a pod, so it matches no
+    # pod/namespaceSelector, and on managed control planes its source address is
+    # neither stable nor documented. The port is therefore open to all sources.
+    # What it exposes is one TLS endpoint that only answers AdmissionReview
+    # requests and whose sole effect is the patch it returns.
+    - ports:
+        - protocol: TCP
+          port: {{ include "zouz-operator-chart.javaInjectWebhookPort" . | int }}
+{{- end }}
+{{- if not .Values.networkPolicy.ingressOnly }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: "{{ .Release.Name }}-default-deny-egress"
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "zouz-operator-chart.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes:
+    - Egress
+  egress:
+    {{- if .Values.networkPolicy.allowDNS }}
+    # DNS resolution (kube-dns / CoreDNS in kube-system).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- end }}
+    {{- with .Values.networkPolicy.egressRules }}
+    # User-supplied egress allow rules (e.g. CIDRs for the OTEL endpoint,
+    # Unleash (featureFlags.url), the config endpoint, and the kube-apiserver).
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}
+{{- end -}}
