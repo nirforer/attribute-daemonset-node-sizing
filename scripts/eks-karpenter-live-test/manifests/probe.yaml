@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: attrb-karp-test
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: probe
+  namespace: attrb-karp-test
+spec:
+  replicas: 0
+  selector:
+    matchLabels: {app: probe}
+  template:
+    metadata:
+      labels: {app: probe}
+    spec:
+      nodeSelector:
+        karpenter.sh/nodepool: sensor-test   # only schedulable on a Karpenter node -> forces a launch
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: sleep
+          image: public.ecr.aws/docker/library/busybox:1.36
+          command: ["sh", "-c", "trap 'exit 0' TERM INT; sleep 100000 & wait $!"]
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}

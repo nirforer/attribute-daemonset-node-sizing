@@ -1,0 +1,54 @@
+##### r4-v1.14.1-karpconfig   karpenter=1.14.1   2026-09-15T12:24:52Z
+daemonset.apps/t-cpu12 created
+daemonset.apps/t-cpu128 created
+daemonset.apps/t-cpu16 created
+daemonset.apps/t-cpu192 created
+daemonset.apps/t-cpu2 created
+daemonset.apps/t-cpu24 created
+daemonset.apps/t-cpu32 created
+daemonset.apps/t-cpu4 created
+daemonset.apps/t-cpu48 created
+daemonset.apps/t-cpu64 created
+daemonset.apps/t-cpu72 created
+daemonset.apps/t-cpu8 created
+daemonset.apps/t-cpu96 created
+daemonset.apps/t-default created
+--- sensor DaemonSets in attrb-karp-test (before launch):
+NAME        DESIRED   READY   CPU_REQ   MEM_REQ
+t-cpu12     0         0       120m      300Mi
+t-cpu128    0         0       1280m     2560Mi
+t-cpu16     0         0       160m      320Mi
+t-cpu192    0         0       1920m     4Gi
+t-cpu2      0         0       100m      300Mi
+t-cpu24     0         0       240m      640Mi
+t-cpu32     0         0       320m      640Mi
+t-cpu4      0         0       100m      300Mi
+t-cpu48     0         0       480m      1Gi
+t-cpu64     0         0       640m      1280Mi
+t-cpu72     0         0       720m      1500Mi
+t-cpu8      0         0       100m      300Mi
+t-cpu96     0         0       960m      1960Mi
+t-default   1         0       100m      300Mi
+--- probe scaled to 1 at 2026-09-15T12:25:09Z; waiting for a NodeClaim
+nodeclaim: nodeclaim.karpenter.sh/sensor-test-42cld
+NAME                TYPE        VCPU   PLANNED_CPU   PLANNED_MEM   PLANNED_PODS
+sensor-test-42cld   c6i.large   2      450m          728Mi         5
+--- karpenter log lines (provisioning) since 2026-09-15T12:25:09Z:
+{'message': 'computing scheduling decision for provisionable pod(s)'}
+{'message': 'found provisionable pod(s)', 'Pods': 'attrb-karp-test/probe-5895946464-wc65h'}
+{'message': 'computed new nodeclaim(s) to fit pod(s)', 'pods': 1}
+{'message': 'created nodeclaim', 'NodeClaim': {'name': 'sensor-test-42cld'}, 'requests': {'cpu': '450m', 'memory': '728Mi', 'pods': '5'}, 'instance-types': 'c6i.2xlarge, c6i.4xlarge, c6i.8xlarge, c6i.large, c6i.xlarge'}
+{'message': 'launched nodeclaim', 'NodeClaim': {'name': 'sensor-test-42cld'}, 'instance-type': 'c6i.large', 'capacity-type': 'on-demand', 'zone': 'eu-central-1a', 'allocatable': {'cpu': '1930m', 'ephemeral-storage': '17Gi', 'memory': '3114Mi', 'pods': '29', 'vpc.amazonaws.com/pod-eni': '9'}}
+--- waiting for the node to be Ready (up to 5 min)
+node: node/ip-192-168-33-110.eu-central-1.compute.internal
+ip-192-168-33-110.eu-central-1.compute.internal   Ready   <none>   16s   v1.36.3-eks-cb19647   c6i.large   2     4096
+--- pods on the new node:
+attrb-karp-test  probe-5895946464-wc65h                       Running
+attrb-karp-test  t-cpu2-w9pt5                                 RunContainerError
+attribute        attribute-zp4c9                              Running
+kube-system      aws-node-9x46w                               Running
+kube-system      kube-proxy-g68tp                             Running
+--- sensor test pods on the node, requests:
+  probe-5895946464-wc65h {'cpu': '100m', 'memory': '128Mi'}
+  t-cpu2-w9pt5 {'cpu': '100m', 'memory': '300Mi'}
+##### end r4-v1.14.1-karpconfig 2026-09-15T12:26:09Z

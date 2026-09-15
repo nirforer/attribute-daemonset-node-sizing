@@ -1,0 +1,30 @@
+##### r6-v1.14.1-tiered-nodepool   karpenter=1.14.1   2026-09-15T12:30:05Z
+daemonset.apps/t created
+daemonset.apps/t-c6i created
+--- sensor DaemonSets in attrb-karp-test (before launch):
+NAME    DESIRED   READY   CPU_REQ   MEM_REQ
+t       1         0       100m      300Mi
+t-c6i   0         0       320m      640Mi
+--- probe scaled to 1 at 2026-09-15T12:30:19Z; waiting for a NodeClaim
+nodeclaim: nodeclaim.karpenter.sh/sensor-test-vl5g7
+NAME                TYPE        VCPU   PLANNED_CPU   PLANNED_MEM   PLANNED_PODS
+sensor-test-vl5g7   c6i.large   2      670m          1068Mi        5
+--- karpenter log lines (provisioning) since 2026-09-15T12:30:19Z:
+{'message': 'computing scheduling decision for provisionable pod(s)'}
+{'message': 'found provisionable pod(s)', 'Pods': 'attrb-karp-test/probe-5895946464-mbqbh'}
+{'message': 'computed new nodeclaim(s) to fit pod(s)', 'pods': 1}
+{'message': 'created nodeclaim', 'NodeClaim': {'name': 'sensor-test-vl5g7'}, 'requests': {'cpu': '670m', 'memory': '1068Mi', 'pods': '5'}, 'instance-types': 'c6i.2xlarge, c6i.4xlarge, c6i.8xlarge, c6i.large, c6i.xlarge'}
+{'message': 'launched nodeclaim', 'NodeClaim': {'name': 'sensor-test-vl5g7'}, 'instance-type': 'c6i.large', 'capacity-type': 'on-demand', 'zone': 'eu-central-1b', 'allocatable': {'cpu': '1930m', 'ephemeral-storage': '17Gi', 'memory': '3217400Ki', 'pods': '29', 'vpc.amazonaws.com/pod-eni': '9'}}
+--- waiting for the node to be Ready (up to 5 min)
+node: node/ip-192-168-95-207.eu-central-1.compute.internal
+ip-192-168-95-207.eu-central-1.compute.internal   Ready   <none>   11s   v1.36.3-eks-cb19647   c6i.large   2     4096
+--- pods on the new node:
+attrb-karp-test  probe-5895946464-mbqbh                       Running
+attrb-karp-test  t-c6i-g6cbl                                  RunContainerError
+attribute        attribute-stbsw                              Running
+kube-system      aws-node-td7tq                               Running
+kube-system      kube-proxy-zwn9q                             Running
+--- sensor test pods on the node, requests:
+  probe-5895946464-mbqbh {'cpu': '100m', 'memory': '128Mi'}
+  t-c6i-g6cbl {'cpu': '320m', 'memory': '640Mi'}
+##### end r6-v1.14.1-tiered-nodepool 2026-09-15T12:31:13Z

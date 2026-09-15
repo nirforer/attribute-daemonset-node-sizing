@@ -1,0 +1,30 @@
+##### r2-v1.13.1-tiered-nodepool   karpenter=4d5d576e8ba007948869b379740554a7cd8642ad2bbaa7ea9cf907c141a31f5d   2026-09-15T11:23:20Z
+daemonset.apps/t created
+daemonset.apps/t-c6i created
+--- sensor DaemonSets in attrb-karp-test (before launch):
+NAME    DESIRED   READY   CPU_REQ   MEM_REQ
+t       1         0       100m      300Mi
+t-c6i   0         0       320m      640Mi
+--- probe scaled to 1 at 2026-09-15T11:23:32Z; waiting for a NodeClaim
+nodeclaim: nodeclaim.karpenter.sh/sensor-test-w5d6m
+NAME                TYPE        VCPU   PLANNED_CPU   PLANNED_MEM   PLANNED_PODS
+sensor-test-w5d6m   c6i.large   2      670m          1068Mi        5
+--- karpenter log lines (provisioning) since 2026-09-15T11:23:32Z:
+{'message': 'computing scheduling decision for provisionable pod(s)'}
+{'message': 'found provisionable pod(s)', 'Pods': 'attrb-karp-test/probe-5895946464-8p6d2'}
+{'message': 'computed new nodeclaim(s) to fit pod(s)', 'pods': 1}
+{'message': 'created nodeclaim', 'NodeClaim': {'name': 'sensor-test-w5d6m'}, 'requests': {'cpu': '670m', 'memory': '1068Mi', 'pods': '5'}, 'instance-types': 'c6i.2xlarge, c6i.4xlarge, c6i.8xlarge, c6i.large, c6i.xlarge'}
+{'message': 'launched nodeclaim', 'NodeClaim': {'name': 'sensor-test-w5d6m'}, 'instance-type': 'c6i.large', 'capacity-type': 'on-demand', 'zone': 'eu-central-1b', 'allocatable': {'cpu': '1930m', 'ephemeral-storage': '17Gi', 'memory': '3217400Ki', 'pods': '29', 'vpc.amazonaws.com/pod-eni': '9'}}
+--- waiting for the node to be Ready (up to 5 min)
+node: node/ip-192-168-79-177.eu-central-1.compute.internal
+ip-192-168-79-177.eu-central-1.compute.internal   Ready   <none>   17s   v1.36.3-eks-cb19647   c6i.large   2     4096
+--- pods on the new node:
+attrb-karp-test  probe-5895946464-8p6d2                       Running
+attrb-karp-test  t-c6i-5rr9h                                  RunContainerError
+attribute        attribute-4scgz                              Running
+kube-system      aws-node-v8qrl                               Running
+kube-system      kube-proxy-nk8hz                             Running
+--- sensor test pods on the node, requests:
+  probe-5895946464-8p6d2 {'cpu': '100m', 'memory': '128Mi'}
+  t-c6i-5rr9h {'cpu': '320m', 'memory': '640Mi'}
+##### end r2-v1.13.1-tiered-nodepool 2026-09-15T11:24:33Z

@@ -112,19 +112,26 @@ property of their NodePools and their Karpenter version.
   template label (F2 or F4). Otherwise the choices are the 680m / 1560Mi
   planning error of three instance-cpu tiers, or staying with one DaemonSet.
 
-## 7. Observed on EKS with Karpenter 1.13.1
+## 7. Observed on EKS with Karpenter 1.13.1, then 1.14.1
 
 Same pool shape as theirs (c6i, `instance-cpu Gt 1, Lt 34`), a 100m / 128Mi
-pod as the trigger. Baseline overhead on every round was 350m / 428Mi: the pod,
-Attribute's own single-mode sensor already on the cluster, aws-node and
-kube-proxy. Everything above that is planned sensor overhead.
+pod as the trigger, the same three DaemonSet configurations on both versions.
+Baseline overhead on every round was 350m / 428Mi: the pod, Attribute's own
+single-mode sensor already on the cluster, aws-node and kube-proxy. Everything
+above that is planned sensor overhead. Raw output per round and the scripts are
+in `scripts/eks-karpenter-live-test/`.
 
-| Round | DaemonSets | Karpenter planned | Sensor that really landed | Instance launched |
-|---|---|---|---|---|
-| 1. Three instance-cpu tiers + catch-all | 4 | 1030m / 1988Mi, so 680m / 1560Mi of sensor | `t-small`, 100m / 300Mi | c6i.large |
-| 2. Tier keyed on `karpenter.sh/nodepool` + catch-all | 2 | 670m / 1068Mi, so 320m / 640Mi of sensor, exact | `t-c6i`, 320m / 640Mi | c6i.large |
-| 3. Attribute's karpconfig mode | 14 | 1590m / 3528Mi, so 1240m / 3100Mi of sensor | `t-cpu4`, 100m / 300Mi | **c6i.xlarge**; c6i.large was dropped from the candidates because 3528Mi does not fit its 3114Mi allocatable |
+| Round | DaemonSets | Karpenter | Karpenter planned | Sensor that really landed | Instance launched |
+|---|---|---|---|---|---|
+| 1 | Three instance-cpu tiers + catch-all (4) | 1.13.1 | 1030m / 1988Mi, so 680m / 1560Mi of sensor | `t-small`, 100m / 300Mi | c6i.large |
+| 5 | same | 1.14.1 | 450m / 728Mi, so 100m / 300Mi of sensor, exact | `t-small`, 100m / 300Mi | c6i.large |
+| 2 | Tier keyed on `karpenter.sh/nodepool` + catch-all (2) | 1.13.1 | 670m / 1068Mi, so 320m / 640Mi of sensor, exact | `t-c6i`, 320m / 640Mi | c6i.large |
+| 6 | same | 1.14.1 | 670m / 1068Mi, exact | `t-c6i`, 320m / 640Mi | c6i.large |
+| 3 | Attribute's karpconfig mode (14) | 1.13.1 | 1590m / 3528Mi, so 1240m / 3100Mi of sensor | `t-cpu4`, 100m / 300Mi | **c6i.xlarge**; c6i.large was dropped from the candidates because 3528Mi does not fit its 3114Mi allocatable |
+| 4 | same | 1.14.1 | 450m / 728Mi, so 100m / 300Mi of sensor, exact | `t-cpu2`, 100m / 300Mi | c6i.large |
 
 Round 3 is the cost of the bug in one line: a 4-vCPU, 8 GiB instance for a
 100m pod, because Karpenter reserved room for eight sensors, two of which
-(`cpu12`, `cpu24`) match no c6i size at all.
+(`cpu12`, `cpu24`) match no c6i size at all. Round 4 is the same fourteen
+DaemonSets on 1.14.1: one sensor planned, the right one landed, c6i.large
+launched. Nothing about the NodePool changed between the two.

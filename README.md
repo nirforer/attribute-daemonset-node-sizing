@@ -115,20 +115,25 @@ their current pools can carry the size: `docs/pool-labels-vs-node-size.md`);
 or accept E3's 680m / 1560Mi planning error, half of what the existing
 karpconfig mode would cost on the same pools.
 
-**Observed live on EKS with Karpenter 1.13.1** (playground cluster, a NodePool
-with their c6i 2-32 vCPU shape, a 100m pod as the trigger; the planned numbers
-below are Karpenter's own `NodeClaim.spec.resources.requests`, which include
+**Observed live on EKS, Karpenter 1.13.1 then 1.14.1** (playground cluster, a
+NodePool with their c6i 2-32 vCPU shape, a 100m pod as the trigger; the planned
+numbers are Karpenter's own `NodeClaim.spec.resources.requests`, which include
 350m / 428Mi of baseline: the pod, Attribute's existing single-mode sensor,
-aws-node and kube-proxy):
+aws-node and kube-proxy; `scripts/eks-karpenter-live-test/` has the kit and the
+raw output of every round):
 
-| Round | Planned by Karpenter | Sensor overhead in that | Sensor that landed | Instance |
-|---|---|---|---|---|
-| 3 instance-cpu tiers + catch-all | 1030m / 1988Mi | 680m / 1560Mi (all four) | 100m / 300Mi | c6i.large |
-| tier on `karpenter.sh/nodepool` + catch-all | 670m / 1068Mi | 320m / 640Mi (exact) | 320m / 640Mi | c6i.large |
-| existing karpconfig mode, 14 DaemonSets | 1590m / 3528Mi | 1240m / 3100Mi (eight) | 100m / 300Mi | **c6i.xlarge**, c6i.large dropped as too small |
+| DaemonSets under test | Karpenter | Planned by Karpenter | Sensor overhead in that | Sensor that landed | Instance |
+|---|---|---|---|---|---|
+| existing karpconfig mode, 14 DaemonSets | 1.13.1 | 1590m / 3528Mi | 1240m / 3100Mi (eight) | 100m / 300Mi | **c6i.xlarge**, c6i.large dropped as too small |
+| same | 1.14.1 | 450m / 728Mi | 100m / 300Mi (one, exact) | 100m / 300Mi | c6i.large |
+| 3 instance-cpu tiers + catch-all | 1.13.1 | 1030m / 1988Mi | 680m / 1560Mi (all four) | 100m / 300Mi | c6i.large |
+| same | 1.14.1 | 450m / 728Mi | 100m / 300Mi (one, exact) | 100m / 300Mi | c6i.large |
+| tier on `karpenter.sh/nodepool` + catch-all | 1.13.1 | 670m / 1068Mi | 320m / 640Mi (exact) | 320m / 640Mi | c6i.large |
+| same | 1.14.1 | 670m / 1068Mi | 320m / 640Mi (exact) | 320m / 640Mi | c6i.large |
 
-Section 7 of `docs/pool-labels-vs-node-size.md` has the round details. The
-same rounds on Karpenter 1.14.1 are the pending half of the test.
+Every 1.14.1 plan equals what the node then ran, and every 1.13.1 plan equals
+what section E of the replay predicted. Section 7 of
+`docs/pool-labels-vs-node-size.md` has the round details.
 
 ## 3. The change: tiered DaemonSet mode
 
@@ -228,10 +233,12 @@ examples/attribute-tiers-karpenter.yaml   tiered values used in the tests
 examples/attribute-tiers-instance-cpu.yaml  3 CPU-count tiers for pools that span many sizes (Karpenter >= 1.14)
 examples/values-no-medium-tier.yaml       demo-chart override
 scripts/gke-tiered-migration-test.sh      live single -> tiered -> label flip test
+scripts/eks-karpenter-live-test/          Karpenter 1.13.1 / 1.14.1 install kit, round scripts, manifests, raw results
 scripts/verify.sh                         one-pod-per-node check for the demo charts
 charts/agent, charts/node-sized-agent     demo charts from the first two sessions
 ```
 
 Test clusters: GKE `aws-discrepancy-explainer` (e2-standard-2/4/8 node pools)
 and EKS `attribute-playground` (eu-central-1), which runs Attribute's own
-release in single DaemonSet mode with a managed node group and no Karpenter.
+release in single DaemonSet mode on a managed node group. Karpenter 1.13.1 and
+1.14.1 were installed there for the live test and removed afterwards.

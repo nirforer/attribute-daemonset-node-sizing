@@ -1,0 +1,34 @@
+##### r1-v1.13.1-tiered-cpu   karpenter=4d5d576e8ba007948869b379740554a7cd8642ad2bbaa7ea9cf907c141a31f5d   2026-09-15T11:19:52Z
+daemonset.apps/t created
+daemonset.apps/t-large created
+daemonset.apps/t-medium created
+daemonset.apps/t-small created
+--- sensor DaemonSets in attrb-karp-test (before launch):
+NAME       DESIRED   READY   CPU_REQ   MEM_REQ
+t          1         0       100m      300Mi
+t-large    0         0       320m      640Mi
+t-medium   0         0       160m      320Mi
+t-small    0         0       100m      300Mi
+--- probe scaled to 1 at 2026-09-15T11:20:05Z; waiting for a NodeClaim
+nodeclaim: nodeclaim.karpenter.sh/sensor-test-b9xlp
+NAME                TYPE        VCPU   PLANNED_CPU   PLANNED_MEM   PLANNED_PODS
+sensor-test-b9xlp   c6i.large   2      1030m         1988Mi        8
+--- karpenter log lines (provisioning) since 2026-09-15T11:20:05Z:
+{'message': 'computing scheduling decision for provisionable pod(s)'}
+{'message': 'found provisionable pod(s)', 'Pods': 'attrb-karp-test/probe-5895946464-pzwrw'}
+{'message': 'computed new nodeclaim(s) to fit pod(s)', 'pods': 1}
+{'message': 'created nodeclaim', 'NodeClaim': {'name': 'sensor-test-b9xlp'}, 'requests': {'cpu': '1030m', 'memory': '1988Mi', 'pods': '8'}, 'instance-types': 'c6i.2xlarge, c6i.4xlarge, c6i.8xlarge, c6i.large, c6i.xlarge'}
+{'message': 'launched nodeclaim', 'NodeClaim': {'name': 'sensor-test-b9xlp'}, 'instance-type': 'c6i.large', 'capacity-type': 'on-demand', 'zone': 'eu-central-1c', 'allocatable': {'cpu': '1930m', 'ephemeral-storage': '17Gi', 'memory': '3114Mi', 'pods': '29', 'vpc.amazonaws.com/pod-eni': '9'}}
+--- waiting for the node to be Ready (up to 5 min)
+node: node/ip-192-168-17-118.eu-central-1.compute.internal
+ip-192-168-17-118.eu-central-1.compute.internal   Ready   <none>   13s   v1.36.3-eks-cb19647   c6i.large   2     4096
+--- pods on the new node:
+attrb-karp-test  probe-5895946464-pzwrw                       Running
+attrb-karp-test  t-small-544qv                                RunContainerError
+attribute        attribute-q4f4r                              Running
+kube-system      aws-node-n68xl                               Running
+kube-system      kube-proxy-kl4tx                             Running
+--- sensor test pods on the node, requests:
+  probe-5895946464-pzwrw {'cpu': '100m', 'memory': '128Mi'}
+  t-small-544qv {'cpu': '100m', 'memory': '300Mi'}
+##### end r1-v1.13.1-tiered-cpu 2026-09-15T11:20:59Z

@@ -1,0 +1,54 @@
+##### r3-v1.13.1-karpconfig   karpenter=4d5d576e8ba007948869b379740554a7cd8642ad2bbaa7ea9cf907c141a31f5d   2026-09-15T11:26:43Z
+daemonset.apps/t-cpu12 created
+daemonset.apps/t-cpu128 created
+daemonset.apps/t-cpu16 created
+daemonset.apps/t-cpu192 created
+daemonset.apps/t-cpu2 created
+daemonset.apps/t-cpu24 created
+daemonset.apps/t-cpu32 created
+daemonset.apps/t-cpu4 created
+daemonset.apps/t-cpu48 created
+daemonset.apps/t-cpu64 created
+daemonset.apps/t-cpu72 created
+daemonset.apps/t-cpu8 created
+daemonset.apps/t-cpu96 created
+daemonset.apps/t-default created
+--- sensor DaemonSets in attrb-karp-test (before launch):
+NAME        DESIRED   READY   CPU_REQ   MEM_REQ
+t-cpu12     0         0       120m      300Mi
+t-cpu128    0         0       1280m     2560Mi
+t-cpu16     0         0       160m      320Mi
+t-cpu192    0         0       1920m     4Gi
+t-cpu2      0         0       100m      300Mi
+t-cpu24     0         0       240m      640Mi
+t-cpu32     0         0       320m      640Mi
+t-cpu4      0         0       100m      300Mi
+t-cpu48     0         0       480m      1Gi
+t-cpu64     0         0       640m      1280Mi
+t-cpu72     0         0       720m      1500Mi
+t-cpu8      0         0       100m      300Mi
+t-cpu96     0         0       960m      1960Mi
+t-default   1         0       100m      300Mi
+--- probe scaled to 1 at 2026-09-15T11:27:00Z; waiting for a NodeClaim
+nodeclaim: nodeclaim.karpenter.sh/sensor-test-t7p8j
+NAME                TYPE         VCPU   PLANNED_CPU   PLANNED_MEM   PLANNED_PODS
+sensor-test-t7p8j   c6i.xlarge   4      1590m         3528Mi        12
+--- karpenter log lines (provisioning) since 2026-09-15T11:27:00Z:
+{'message': 'computing scheduling decision for provisionable pod(s)'}
+{'message': 'found provisionable pod(s)', 'Pods': 'attrb-karp-test/probe-5895946464-dxj67'}
+{'message': 'computed new nodeclaim(s) to fit pod(s)', 'pods': 1}
+{'message': 'created nodeclaim', 'NodeClaim': {'name': 'sensor-test-t7p8j'}, 'requests': {'cpu': '1590m', 'memory': '3528Mi', 'pods': '12'}, 'instance-types': 'c6i.2xlarge, c6i.4xlarge, c6i.8xlarge, c6i.xlarge'}
+{'message': 'launched nodeclaim', 'NodeClaim': {'name': 'sensor-test-t7p8j'}, 'instance-type': 'c6i.xlarge', 'capacity-type': 'on-demand', 'zone': 'eu-central-1b', 'allocatable': {'cpu': '3920m', 'ephemeral-storage': '17Gi', 'memory': '6584Mi', 'pods': '58', 'vpc.amazonaws.com/pod-eni': '18'}}
+--- waiting for the node to be Ready (up to 5 min)
+node: node/ip-192-168-64-150.eu-central-1.compute.internal
+ip-192-168-64-150.eu-central-1.compute.internal   Ready   <none>   14s   v1.36.3-eks-cb19647   c6i.xlarge   4     8192
+--- pods on the new node:
+attrb-karp-test  probe-5895946464-dxj67                       Running
+attrb-karp-test  t-cpu4-gktn9                                 RunContainerError
+attribute        attribute-lq4x4                              Running
+kube-system      aws-node-hg79m                               Running
+kube-system      kube-proxy-ks74p                             Running
+--- sensor test pods on the node, requests:
+  probe-5895946464-dxj67 {'cpu': '100m', 'memory': '128Mi'}
+  t-cpu4-gktn9 {'cpu': '100m', 'memory': '300Mi'}
+##### end r3-v1.13.1-karpconfig 2026-09-15T11:27:55Z

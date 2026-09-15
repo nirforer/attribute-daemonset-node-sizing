@@ -1,0 +1,9 @@
+daemonset:
+  enabled: true
+  tierLabelKey: karpenter.sh/nodepool
+  tiers:
+    c6i:
+      values: ["sensor-test"]
+      resources:
+        cpu:    { request: "320m", limit: "1600m" }
+        memory: { request: "640Mi", limit: "3Gi" }

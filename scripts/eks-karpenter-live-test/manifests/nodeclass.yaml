@@ -1,0 +1,17 @@
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: sensor-test
+spec:
+  amiSelectorTerms:
+    - alias: al2023@latest
+  role: KarpenterNodeRole-<CLUSTER_NAME>
+  subnetSelectorTerms:                 # the same public subnets the managed node group uses
+    - id: <SUBNET_ID_A>
+    - id: <SUBNET_ID_B>
+    - id: <SUBNET_ID_C>
+  securityGroupSelectorTerms:          # the cluster security group, same as the managed node group
+    - id: <CLUSTER_SECURITY_GROUP_ID>
+  tags:
+    Owner: <owner>
+    Purpose: karpenter-daemonset-overhead-test
