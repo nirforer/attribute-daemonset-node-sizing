@@ -3,7 +3,7 @@
 # c6i.large through c6i.8xlarge). Sizes below are the ones Attribute's own karpconfig uses
 # for the same CPU counts; adjust to taste.
 #
-# Requires Karpenter >= 1.14.0 (kubernetes-sigs/karpenter#715, fixed by PR #2486). On older
+# Requires Karpenter >= 1.14.0 (kubernetes-sigs/karpenter#715, fixed by PR #2975). On older
 # Karpenter every tier whose values fall inside a NodePool's instance-cpu range is charged
 # to every node planned from that pool: with the three tiers below plus the catch-all that
 # is 680m CPU / 1560Mi per node instead of the 100-320m / 300-640Mi one sensor really uses

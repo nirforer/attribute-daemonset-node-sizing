@@ -29,7 +29,7 @@ DaemonSet pinned to `instance-cpu In [64]` was counted against every candidate
 node, including 2-vCPU ones. This is
 [kubernetes-sigs/karpenter#715](https://github.com/kubernetes-sigs/karpenter/issues/715),
 open since March 2023, fixed by
-[PR #2486](https://github.com/kubernetes-sigs/karpenter/pull/2486) and released in
+[PR #2975](https://github.com/kubernetes-sigs/karpenter/pull/2975) and released in
 Karpenter **v1.14.0 on 2026-07-11**. From v1.14 the overhead is grouped per
 instance type, so instance-size labels become safe.
 
@@ -56,9 +56,10 @@ Granularity is per NodePool: one sensor size per NodePool, which is the
 **Evidence.** `karpenter-check/` is a small Go program that imports Karpenter's
 own `pkg/scheduling` library (v1.14.1) and replays both the pre-1.14 and the
 1.14 decision for four ways of splitting the sensor, against three synthetic
-NodePools and four instance types (sections A-D), and then against the
-customer's real NodePools (section E, next paragraph). `output.txt` has the
-full run. Summary of planned sensor DaemonSets per new node for A-D:
+NodePools and four instance types (sections A-D), then against the customer's
+real NodePools (section E, next paragraph), then against hypothetical splits of
+those pools (section F, see `docs/pool-labels-vs-node-size.md`). `output.txt`
+has the full run. Summary of planned sensor DaemonSets per new node for A-D:
 
 | Split strategy | Karpenter <= 1.13 | Karpenter >= 1.14 |
 |---|---|---|
@@ -67,8 +68,9 @@ full run. Summary of planned sensor DaemonSets per new node for A-D:
 | C. Tiers on `karpenter.sh/nodepool` | exact, 1 | exact, 1 |
 | D. Two tiers on instance-cpu value ranges | 2 counted on an unconstrained NodePool | exact, 1 |
 
-All 72 post-1.14 decisions in the run (32 synthetic, 40 for the customer's
-pools) matched what the node really receives once it exists. The bug only
+All 92 post-1.14 decisions in the run (32 synthetic, 40 for the customer's
+pools, 20 for the hypothetical splits) matched what the node really receives
+once it exists. The bug only
 affects planning of new nodes; for existing nodes Karpenter always used the
 node's real labels.
 
@@ -108,8 +110,25 @@ shrinks what Karpenter believes fits on a small node, so it launches larger
 instances than the workloads need, and consolidation is judged with the same
 inflated number. Options in that case, in order of preference: upgrade
 Karpenter to 1.14; split the NodePools by CPU band and key tiers on a pool
-label (scenario B); or accept E3's 680m / 1560Mi planning error, half of what
-the existing karpconfig mode would cost on the same pools.
+label or on discrete `instance-cpu In` sets (section F, and why nothing in
+their current pools can carry the size: `docs/pool-labels-vs-node-size.md`);
+or accept E3's 680m / 1560Mi planning error, half of what the existing
+karpconfig mode would cost on the same pools.
+
+**Observed live on EKS with Karpenter 1.13.1** (playground cluster, a NodePool
+with their c6i 2-32 vCPU shape, a 100m pod as the trigger; the planned numbers
+below are Karpenter's own `NodeClaim.spec.resources.requests`, which include
+350m / 428Mi of baseline: the pod, Attribute's existing single-mode sensor,
+aws-node and kube-proxy):
+
+| Round | Planned by Karpenter | Sensor overhead in that | Sensor that landed | Instance |
+|---|---|---|---|---|
+| 3 instance-cpu tiers + catch-all | 1030m / 1988Mi | 680m / 1560Mi (all four) | 100m / 300Mi | c6i.large |
+| tier on `karpenter.sh/nodepool` + catch-all | 670m / 1068Mi | 320m / 640Mi (exact) | 320m / 640Mi | c6i.large |
+| existing karpconfig mode, 14 DaemonSets | 1590m / 3528Mi | 1240m / 3100Mi (eight) | 100m / 300Mi | **c6i.xlarge**, c6i.large dropped as too small |
+
+Section 7 of `docs/pool-labels-vs-node-size.md` has the round details. The
+same rounds on Karpenter 1.14.1 are the pending half of the test.
 
 ## 3. The change: tiered DaemonSet mode
 
@@ -204,6 +223,7 @@ charts/operator-chart-tiered/      Attribute chart 0.0.98 + tiered DaemonSet mod
 patches/                           diff of that change against 0.0.98
 upstream/operator-chart-0.0.98/    pristine copy of Attribute's chart
 karpenter-check/                   Go program using Karpenter's scheduling library, plus its output
+docs/pool-labels-vs-node-size.md   why the customer's pools cannot carry the sensor size, and what a split needs
 examples/attribute-tiers-karpenter.yaml   tiered values used in the tests
 examples/attribute-tiers-instance-cpu.yaml  3 CPU-count tiers for pools that span many sizes (Karpenter >= 1.14)
 examples/values-no-medium-tier.yaml       demo-chart override

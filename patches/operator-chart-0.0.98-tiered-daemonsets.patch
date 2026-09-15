@@ -1,6 +1,6 @@
 diff --color -ruN upstream/operator-chart-0.0.98/RELEASE_NOTES.md charts/operator-chart-tiered/RELEASE_NOTES.md
 --- upstream/operator-chart-0.0.98/RELEASE_NOTES.md	2026-09-15 11:46:36
-+++ charts/operator-chart-tiered/RELEASE_NOTES.md	2026-09-15 13:17:52
++++ charts/operator-chart-tiered/RELEASE_NOTES.md	2026-09-15 14:18:18
 @@ -9,6 +9,21 @@
  
  ---
@@ -16,7 +16,7 @@ diff --color -ruN upstream/operator-chart-0.0.98/RELEASE_NOTES.md charts/operato
 +
 +| Service | New Version | Key Updates |
 +|---------|-------------|-------------|
-+| **Chart** | `0.0.99` | • New `daemonset.tiers` / `daemonset.tierLabelKey`: in DaemonSet mode (`daemonset.enabled=true`, `daemonset.karpenter=false`) the sensor DaemonSet can be split into tiers, each pinned to a set of node-label values (`<key> In [...]`) with its own `resources` and optional `tolerations`, plus the catch-all DaemonSet (`<key> NotIn [...]`) that keeps the release name and selector so enabling tiers is a rolling update, not a recreate. A label value listed in two tiers, a tier named `default`, or a cpu/memory block without a request fails the render. <br/> • With `tiers` empty the render is byte-identical to 0.0.98; Karpenter and operator modes are unchanged. <br/> • Guidance: key tiers on a label set on the NodePool (`spec.template.metadata.labels`) or on `karpenter.sh/nodepool`. Instance-size labels (`karpenter.k8s.aws/instance-cpu`, `node.kubernetes.io/instance-type`) are only safe on Karpenter >= 1.14.0: older Karpenter counts every tier's DaemonSet against every new node (kubernetes-sigs/karpenter#715, fixed by #2486). The existing `karpconfig` mode is affected by the same bug on Karpenter < 1.14. |
++| **Chart** | `0.0.99` | • New `daemonset.tiers` / `daemonset.tierLabelKey`: in DaemonSet mode (`daemonset.enabled=true`, `daemonset.karpenter=false`) the sensor DaemonSet can be split into tiers, each pinned to a set of node-label values (`<key> In [...]`) with its own `resources` and optional `tolerations`, plus the catch-all DaemonSet (`<key> NotIn [...]`) that keeps the release name and selector so enabling tiers is a rolling update, not a recreate. A label value listed in two tiers, a tier named `default`, or a cpu/memory block without a request fails the render. <br/> • With `tiers` empty the render is byte-identical to 0.0.98; Karpenter and operator modes are unchanged. <br/> • Guidance: key tiers on a label set on the NodePool (`spec.template.metadata.labels`) or on `karpenter.sh/nodepool`. Instance-size labels (`karpenter.k8s.aws/instance-cpu`, `node.kubernetes.io/instance-type`) are only safe on Karpenter >= 1.14.0: older Karpenter counts every tier's DaemonSet against every new node (kubernetes-sigs/karpenter#715, fixed by #2975). The existing `karpconfig` mode is affected by the same bug on Karpenter < 1.14. |
 +
 +---
 +
@@ -463,7 +463,7 @@ diff --color -ruN upstream/operator-chart-0.0.98/templates/_sensor_daemonset.tpl
 +{{- end -}}
 diff --color -ruN upstream/operator-chart-0.0.98/values.yaml charts/operator-chart-tiered/values.yaml
 --- upstream/operator-chart-0.0.98/values.yaml	2026-09-15 11:46:36
-+++ charts/operator-chart-tiered/values.yaml	2026-09-15 13:14:44
++++ charts/operator-chart-tiered/values.yaml	2026-09-15 14:18:18
 @@ -545,6 +545,40 @@
        limit: "9600m"
        mem_request: "4Gi"
@@ -483,7 +483,7 @@ diff --color -ruN upstream/operator-chart-0.0.98/values.yaml charts/operator-cha
 +  #     node.kubernetes.io/instance-type, ...) are only safe on Karpenter
 +  #     >= 1.14.0. Older Karpenter cannot resolve them while planning a node
 +  #     and counts every tier's DaemonSet against every new node
-+  #     (kubernetes-sigs/karpenter#715, fixed by #2486 in v1.14.0).
++  #     (kubernetes-sigs/karpenter#715, fixed by #2975 in v1.14.0).
 +  # Each node must match at most one tier; a label value listed in two tiers
 +  # fails the render. The catch-all uses NotIn over all listed values, so it
 +  # also covers nodes without the label.

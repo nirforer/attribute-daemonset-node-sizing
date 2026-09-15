@@ -2,7 +2,7 @@
 // scheduling library, for several ways of splitting Attribute's sensor DaemonSet.
 //
 // preFix  mirrors isDaemonPodCompatible(nct, pod) in karpenter <= v1.13.x  (scheduler.go)
-// postFix mirrors isDaemonPodCompatible(nct, it, pod) in karpenter >= v1.14.0 (PR kubernetes-sigs/karpenter#2486)
+// postFix mirrors isDaemonPodCompatible(nct, it, pod) in karpenter >= v1.14.0 (PR kubernetes-sigs/karpenter#2975)
 // actual  mirrors isDaemonPodCompatibleWithNode: what lands on the node once it exists (same rule kube-scheduler applies)
 //
 // Both Karpenter versions first drop DaemonSet pods that do not tolerate the NodePool's taints
@@ -252,18 +252,72 @@ func main() {
 	}
 	poolNames := []string{"on-demand-c6i", "on-demand-c6i-avro"}
 
+	cpuTiers := []*corev1.Pod{
+		ds("small", "100m", "300Mi", in(aws+"instance-cpu", "2", "4")),
+		ds("medium", "160m", "320Mi", in(aws+"instance-cpu", "8", "16")),
+		ds("large", "320m", "640Mi", in(aws+"instance-cpu", "32")),
+		ds("default", "100m", "300Mi", notIn(aws+"instance-cpu", "2", "4", "8", "16", "32")),
+	}
+
 	fmt.Printf("\n\n##### E. The customer's NodePools (on-demand c6i, 2-32 vCPU inside ONE pool) #####\n")
 	report(custPools, []scenario{
 		{"E1. Single DaemonSet mode (daemonset.enabled=true): one size for every node, nothing to mis-count", []*corev1.Pod{
 			ds("sensor", "100m", "300Mi")}},
 		{"E2. Attribute karpconfig mode (daemonset.karpenter=true): 13 CPU tiers + default on karpenter.k8s.aws/instance-cpu", karpDS},
-		{"E3. Tiered mode, 3 tiers on karpenter.k8s.aws/instance-cpu: small 2-4 / medium 8-16 / large 32 vCPU (+ catch-all)", []*corev1.Pod{
-			ds("small", "100m", "300Mi", in(aws+"instance-cpu", "2", "4")),
-			ds("medium", "160m", "320Mi", in(aws+"instance-cpu", "8", "16")),
-			ds("large", "320m", "640Mi", in(aws+"instance-cpu", "32")),
-			ds("default", "100m", "300Mi", notIn(aws+"instance-cpu", "2", "4", "8", "16", "32"))}},
+		{"E3. Tiered mode, 3 tiers on karpenter.k8s.aws/instance-cpu: small 2-4 / medium 8-16 / large 32 vCPU (+ catch-all)", cpuTiers},
 		{"E4. Tiered mode keyed on the pool itself (karpenter.sh/nodepool): exact on every version, but the same size on a 2 and a 32 vCPU node", []*corev1.Pod{
 			ds("c6i", "320m", "640Mi", in(v1.NodePoolLabelKey, poolNames...)),
 			ds("default", "100m", "300Mi", notIn(v1.NodePoolLabelKey, poolNames...))}},
+	})
+
+	// ---- F. What the customer's NodePools would have to look like for pool-keyed tiers to size the sensor ------------
+	// F1 keeps their pool as is and only moves the existing NodePool label nodePoolCoreSize="2_33" into
+	// spec.template.metadata.labels, so it reaches nodes and Karpenter's planning. F2-F4 split the pool into
+	// three CPU bands, either as discrete instance-cpu sets (F2, F4) or as Gt/Lt ranges (F3).
+	withLabel := func(app string, k, v string) map[string]string { l := custLabels(app); l[k] = v; return l }
+	coreSizePool := tainted(newPool("on-demand-c6i", withLabel("default", rk+"nodePoolCoreSize", "2_33"), c6i, custReqs()...),
+		noSchedule(rk+"capacityType", "on-demand"))
+	bandReqs := func(cpus ...string) []*scheduling.Requirement {
+		r := custReqs()
+		r = append(r, scheduling.NewRequirement(aws+"instance-cpu", corev1.NodeSelectorOpIn, cpus...)) // intersects the Gt1/Lt34 pair
+		return r
+	}
+	rangeReqs := func(gt, lt string) []*scheduling.Requirement {
+		r := custReqs()
+		r = append(r, scheduling.NewRequirement(aws+"instance-cpu", corev1.NodeSelectorOpGt, gt), scheduling.NewRequirement(aws+"instance-cpu", corev1.NodeSelectorOpLt, lt))
+		return r
+	}
+	t := noSchedule(rk+"capacityType", "on-demand")
+	setPools := []pool{
+		tainted(newPool("on-demand-c6i-small", withLabel("default", "attrb.io/sensor-size", "small"), c6i[0:2], bandReqs("2", "4")...), t),
+		tainted(newPool("on-demand-c6i-medium", withLabel("default", "attrb.io/sensor-size", "medium"), c6i[2:4], bandReqs("8", "16")...), t),
+		tainted(newPool("on-demand-c6i-large", withLabel("default", "attrb.io/sensor-size", "large"), c6i[4:5], bandReqs("32")...), t),
+	}
+	rangePools := []pool{
+		tainted(newPool("on-demand-c6i-small", withLabel("default", "attrb.io/sensor-size", "small"), c6i[0:2], rangeReqs("1", "5")...), t),
+		tainted(newPool("on-demand-c6i-medium", withLabel("default", "attrb.io/sensor-size", "medium"), c6i[2:4], rangeReqs("5", "17")...), t),
+		tainted(newPool("on-demand-c6i-large", withLabel("default", "attrb.io/sensor-size", "large"), c6i[4:5], rangeReqs("17", "34")...), t),
+	}
+	labelTiers := []*corev1.Pod{
+		ds("small", "100m", "300Mi", in("attrb.io/sensor-size", "small")),
+		ds("medium", "160m", "320Mi", in("attrb.io/sensor-size", "medium")),
+		ds("large", "320m", "640Mi", in("attrb.io/sensor-size", "large")),
+		ds("default", "100m", "300Mi", notIn("attrb.io/sensor-size", "small", "medium", "large")),
+	}
+
+	fmt.Printf("\n\n##### F. Hypothetical changes to the customer's NodePools #####\n")
+	report([]pool{coreSizePool}, []scenario{
+		{"F1. Their nodePoolCoreSize=2_33 label moved into template labels, one tier keyed on it: exact, but still one size for 2-32 vCPU", []*corev1.Pod{
+			ds("band-2-33", "320m", "640Mi", in(rk+"nodePoolCoreSize", "2_33")),
+			ds("default", "100m", "300Mi", notIn(rk+"nodePoolCoreSize", "2_33"))}},
+	})
+	report(setPools, []scenario{
+		{"F2. Pool split into 3 bands as discrete instance-cpu sets (In [2,4] / In [8,16] / In [32]); tiers on instance-cpu", cpuTiers},
+	})
+	report(rangePools, []scenario{
+		{"F3. Pool split into 3 bands as Gt/Lt ranges; tiers on instance-cpu: the NotIn catch-all is still counted before 1.14", cpuTiers},
+	})
+	report(rangePools, []scenario{
+		{"F4. Same Gt/Lt bands, but each band carries a template label attrb.io/sensor-size and tiers key on that label", labelTiers},
 	})
 }

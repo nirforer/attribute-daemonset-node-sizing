@@ -560,7 +560,7 @@ daemonset:
   #     node.kubernetes.io/instance-type, ...) are only safe on Karpenter
   #     >= 1.14.0. Older Karpenter cannot resolve them while planning a node
   #     and counts every tier's DaemonSet against every new node
-  #     (kubernetes-sigs/karpenter#715, fixed by #2486 in v1.14.0).
+  #     (kubernetes-sigs/karpenter#715, fixed by #2975 in v1.14.0).
   # Each node must match at most one tier; a label value listed in two tiers
   # fails the render. The catch-all uses NotIn over all listed values, so it
   # also covers nodes without the label.
